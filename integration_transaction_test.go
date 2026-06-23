@@ -31,7 +31,7 @@ func TestIntegrationTransactionEOS(t *testing.T) {
 	if err := sclient.Admin().CreateTopic(ctx, topic, 1, 1); err != nil {
 		t.Fatal(err)
 	}
-	integrationWaitTopicReady()
+	integrationWaitTopicReady(t, sclient.Admin(), topic)
 	t.Cleanup(func() {
 		_ = sclient.Admin().DeleteTopics(context.Background(), topic)
 		sclient.Close()

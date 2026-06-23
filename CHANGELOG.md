@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.11] - 2026-06-23
+
+### Fixed
+
+- **Coordinator NOT_COORDINATOR (16)** — retry JoinGroup, InitProducerId, and FindCoordinator when the broker reports a stale coordinator
+- **Transactional produce** — refresh metadata and retry on retriable broker errors (same as `ProduceSync`)
+- **Integration topic readiness** — poll partition metadata after `CreateTopic` instead of a fixed sleep (compression, headers, batch, and related tests)
+
 ## [0.20.10] - 2026-06-23
 
 ### Fixed

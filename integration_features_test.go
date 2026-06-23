@@ -30,6 +30,7 @@ func TestIntegrationHeadersRoundTrip(t *testing.T) {
 	if err := admin.CreateTopic(ctx, topic, 1, 1); err != nil {
 		t.Fatal(err)
 	}
+	integrationWaitTopicReady(t, admin, topic)
 	t.Cleanup(func() { _ = admin.DeleteTopics(context.Background(), topic) })
 
 	ts := time.Now().UTC().Truncate(time.Millisecond)
@@ -98,6 +99,7 @@ func TestIntegrationBatchProduce(t *testing.T) {
 	if err := client.Admin().CreateTopic(ctx, topic, 1, 1); err != nil {
 		t.Fatal(err)
 	}
+	integrationWaitTopicReady(t, client.Admin(), topic)
 	t.Cleanup(func() { _ = client.Admin().DeleteTopics(context.Background(), topic) })
 
 	recs := make([]gokafka.Record, 10)

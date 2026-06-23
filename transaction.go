@@ -2,11 +2,11 @@ package gokafka
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/sinamohsenifar/gokafka/internal/produce"
 	"github.com/sinamohsenifar/gokafka/internal/protocol"
-	"github.com/sinamohsenifar/gokafka/internal/retry"
 )
 
 // TransactionalProducer provides Kafka exactly-once semantics (EOS) within a transaction boundary.
@@ -47,25 +47,31 @@ func (p *Producer) BeginTransaction(ctx context.Context) (*TransactionalProducer
 }
 
 func (t *TransactionalProducer) init(ctx context.Context) error {
-	coord, err := t.client.cluster.TransactionCoordinator(ctx, t.txnID)
-	if err != nil {
-		return err
-	}
-	t.coordinator = coord
 	body := protocol.EncodeInitProducerID(&t.txnID, t.client.cfg.transactionTimeoutMs())
-	var rb []byte
-	err = retry.Do(ctx, t.client.cfg.Retry.MaxAttempts, t.client.cfg.Retry.Backoff, t.client.cfg.Retry.MaxBackoff, func() error {
-		r, err := t.client.cluster.Request(ctx, coord, protocol.APIInitProducerID, protocol.VerInitProducerID, body)
+	var pid protocol.ProducerID
+	err := retryRetriable(ctx, t.client.cfg.Retry, func() error {
+		coord, err := t.client.cluster.TransactionCoordinator(ctx, t.txnID)
 		if err != nil {
 			return err
 		}
-		rb = r
+		t.coordinator = coord
+		rb, err := t.client.cluster.Request(ctx, coord, protocol.APIInitProducerID, protocol.VerInitProducerID, body)
+		if err != nil {
+			return err
+		}
+		pid, err = protocol.DecodeInitProducerID(rb)
+		if err != nil {
+			var apiErr *protocol.APIError
+			if errors.As(err, &apiErr) {
+				if protocol.CoordinatorRetriable(apiErr.Code) {
+					t.client.cluster.Invalidate(coord)
+				}
+				return newKafkaError(apiErr.Code, "", 0, "init producer id failed")
+			}
+			return err
+		}
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-	pid, err := protocol.DecodeInitProducerID(rb)
 	if err != nil {
 		return err
 	}
@@ -93,9 +99,22 @@ func (t *TransactionalProducer) ProduceWithinTxnResult(ctx context.Context, reco
 	if err := t.ensurePartitions(ctx, records); err != nil {
 		return nil, err
 	}
-	return t.prod.sendRecords(ctx, records, recordSendOpts{
-		pid: &t.pid, idState: t.idState, transactional: true,
+	topics := uniqueTopics(records)
+	var results []ProduceRecordResult
+	err := retryRetriable(ctx, t.client.cfg.Retry, func() error {
+		if err := t.client.cluster.Refresh(ctx, topics); err != nil {
+			return err
+		}
+		res, err := t.prod.sendRecords(ctx, records, recordSendOpts{
+			pid: &t.pid, idState: t.idState, transactional: true,
+		})
+		if err != nil {
+			return err
+		}
+		results = res
+		return nil
 	})
+	return results, err
 }
 
 // SendOffsetsToTxn commits consumer group offsets as part of the open transaction (consume-transform-produce).

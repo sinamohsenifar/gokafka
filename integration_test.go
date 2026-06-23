@@ -31,6 +31,7 @@ func TestIntegrationProduceConsume(t *testing.T) {
 	if err := admin.CreateTopic(ctx, topic, 1, 1); err != nil {
 		t.Fatal(err)
 	}
+	integrationWaitTopicReady(t, admin, topic)
 	t.Cleanup(func() { _ = admin.DeleteTopics(context.Background(), topic) })
 
 	payload := []byte("integration-test")
@@ -179,6 +180,7 @@ func TestIntegrationConsumerPauseResume(t *testing.T) {
 	if err := admin.CreateTopic(ctx, topic, 1, 1); err != nil {
 		t.Fatal(err)
 	}
+	integrationWaitTopicReady(t, admin, topic)
 	t.Cleanup(func() { _ = admin.DeleteTopics(context.Background(), topic) })
 
 	if err := client.Producer().ProduceSync(ctx, gokafka.Record{Topic: topic, Value: []byte("first")}); err != nil {

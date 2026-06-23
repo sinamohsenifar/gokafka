@@ -13,8 +13,8 @@ import (
 	"github.com/sinamohsenifar/gokafka"
 )
 
-func integrationWaitTopicReady() {
-	time.Sleep(300 * time.Millisecond)
+func integrationWaitTopicReady(t *testing.T, admin *gokafka.Admin, topic string) {
+	integrationWaitPartitions(t, admin, topic, 1)
 }
 
 func integrationWaitPartitions(t *testing.T, admin *gokafka.Admin, topic string, want int) {
@@ -114,7 +114,7 @@ func integrationProduceConsume(t *testing.T, brokers []string, opts ...gokafka.O
 	if err := admin.CreateTopic(ctx, topic, 1, 1); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(200 * time.Millisecond)
+	integrationWaitTopicReady(t, admin, topic)
 	t.Cleanup(func() { _ = admin.DeleteTopics(context.Background(), topic) })
 
 	payload := []byte("security-integration")

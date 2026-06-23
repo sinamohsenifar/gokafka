@@ -166,24 +166,35 @@ func (c *Consumer) joinAndAssign(ctx context.Context) error {
 	}
 
 	var joined protocol.JoinGroupResponse
-	for {
-		joinBody := protocol.EncodeJoinGroupRequest(
-			c.group, c.memberID, assignor, c.client.cfg.Consumer.GroupInstanceID,
-			c.topics, sessionMs, rebalanceMs, c.isCooperative(),
-		)
-		rb, err := c.client.cluster.Request(ctx, coord, protocol.APIJoinGroup, protocol.VerJoinGroup, joinBody)
-		if err != nil {
-			return err
+joinLoop:
+	for attempt := 0; attempt < 20; attempt++ {
+		for {
+			joinBody := protocol.EncodeJoinGroupRequest(
+				c.group, c.memberID, assignor, c.client.cfg.Consumer.GroupInstanceID,
+				c.topics, sessionMs, rebalanceMs, c.isCooperative(),
+			)
+			rb, err := c.client.cluster.Request(ctx, coord, protocol.APIJoinGroup, protocol.VerJoinGroup, joinBody)
+			if err != nil {
+				return err
+			}
+			joined, err = protocol.DecodeJoinGroupResponse(rb)
+			if errors.Is(err, protocol.ErrMemberIDRequired) {
+				c.memberID = joined.MemberID
+				continue
+			}
+			if code, ok := protocol.APIErrorCode(err); ok && protocol.CoordinatorRetriable(code) {
+				c.client.cluster.Invalidate(coord)
+				coord, err = c.coordinator(ctx)
+				if err != nil {
+					return err
+				}
+				continue joinLoop
+			}
+			if err != nil {
+				return err
+			}
+			break joinLoop
 		}
-		joined, err = protocol.DecodeJoinGroupResponse(rb)
-		if errors.Is(err, protocol.ErrMemberIDRequired) {
-			c.memberID = joined.MemberID
-			continue
-		}
-		if err != nil {
-			return err
-		}
-		break
 	}
 	c.memberID = joined.MemberID
 	c.generation = joined.GenerationID

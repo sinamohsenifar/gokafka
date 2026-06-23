@@ -110,6 +110,9 @@ func (p *Producer) ensureProducerID(ctx context.Context) error {
 		if err != nil {
 			var apiErr *protocol.APIError
 			if errors.As(err, &apiErr) {
+				if protocol.CoordinatorRetriable(apiErr.Code) && txnID != "" {
+					p.client.cluster.Invalidate(coord)
+				}
 				return newKafkaError(apiErr.Code, "", 0, "init producer id failed")
 			}
 			return err

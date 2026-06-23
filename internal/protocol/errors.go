@@ -19,11 +19,23 @@ const ErrorCodeMemberIDRequired int16 = 79
 const (
 	ErrorCodeCoordinatorLoadInProgress int16 = 14
 	ErrorCodeCoordinatorNotAvailable   int16 = 15
+	ErrorCodeNotCoordinator            int16 = 16
 )
 
-// CoordinatorRetriable reports whether FindCoordinator should be retried.
+// CoordinatorRetriable reports whether a coordinator lookup or coordinator RPC should be retried.
 func CoordinatorRetriable(code int16) bool {
-	return code == ErrorCodeCoordinatorLoadInProgress || code == ErrorCodeCoordinatorNotAvailable
+	return code == ErrorCodeCoordinatorLoadInProgress ||
+		code == ErrorCodeCoordinatorNotAvailable ||
+		code == ErrorCodeNotCoordinator
+}
+
+// APIErrorCode returns the Kafka error code when err is a protocol APIError.
+func APIErrorCode(err error) (int16, bool) {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Code, true
+	}
+	return 0, false
 }
 
 // APIError is a non-zero Kafka error code from a protocol response.

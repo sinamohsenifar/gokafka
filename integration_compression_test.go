@@ -37,6 +37,7 @@ func integrationCompressionProduceConsume(t *testing.T, compression gokafka.Comp
 	if err := client.Admin().CreateTopic(ctx, topic, 1, 1); err != nil {
 		t.Fatal(err)
 	}
+	integrationWaitTopicReady(t, client.Admin(), topic)
 	t.Cleanup(func() { _ = client.Admin().DeleteTopics(context.Background(), topic) })
 
 	payload := bytes.Repeat([]byte(fmt.Sprintf("compressed-%v-", compression)), 32)

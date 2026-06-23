@@ -31,7 +31,7 @@ func TestIntegrationStaticMembership(t *testing.T) {
 	if err := client.Admin().CreateTopic(ctx, topic, 2, 1); err != nil {
 		t.Fatal(err)
 	}
-	integrationWaitTopicReady()
+	integrationWaitPartitions(t, client.Admin(), topic, 2)
 	t.Cleanup(func() {
 		_ = client.Admin().DeleteTopics(context.Background(), topic)
 		client.Close()
@@ -98,7 +98,7 @@ func TestIntegrationCooperativeStickyRebalance(t *testing.T) {
 	if err := adminClient.Admin().CreateTopic(ctx, topic, 2, 1); err != nil {
 		t.Fatal(err)
 	}
-	integrationWaitTopicReady()
+	integrationWaitPartitions(t, adminClient.Admin(), topic, 2)
 	t.Cleanup(func() {
 		_ = adminClient.Admin().DeleteTopics(context.Background(), topic)
 		adminClient.Close()
@@ -146,7 +146,7 @@ func TestIntegrationAlterTopicConfigs(t *testing.T) {
 	if err := client.Admin().CreateTopic(ctx, topic, 1, 1); err != nil {
 		t.Fatal(err)
 	}
-	integrationWaitTopicReady()
+	integrationWaitTopicReady(t, client.Admin(), topic)
 	t.Cleanup(func() { _ = client.Admin().DeleteTopics(context.Background(), topic) })
 
 	// AlterConfigs v1 legacy wire.
@@ -192,7 +192,7 @@ func TestIntegrationIncrementalAlterTopicConfigs(t *testing.T) {
 	if err := client.Admin().CreateTopic(ctx, topic, 1, 1); err != nil {
 		t.Fatal(err)
 	}
-	integrationWaitTopicReady()
+	integrationWaitTopicReady(t, client.Admin(), topic)
 	t.Cleanup(func() { _ = client.Admin().DeleteTopics(context.Background(), topic) })
 
 	retention := "43200000"
@@ -237,7 +237,7 @@ func TestIntegrationTopicRetentionConfig(t *testing.T) {
 	if err := client.Admin().CreateTopic(ctx, topic, 1, 1); err != nil {
 		t.Fatal(err)
 	}
-	integrationWaitTopicReady()
+	integrationWaitTopicReady(t, client.Admin(), topic)
 	t.Cleanup(func() { _ = client.Admin().DeleteTopics(context.Background(), topic) })
 
 	retention := "43200000"

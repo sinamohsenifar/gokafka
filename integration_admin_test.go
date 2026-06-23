@@ -99,7 +99,7 @@ func TestIntegrationAdminACL(t *testing.T) {
 	if err := admin.CreateTopic(ctx, topic, 1, 1); err != nil {
 		t.Fatal(err)
 	}
-	integrationWaitTopicReady()
+	integrationWaitTopicReady(t, admin, topic)
 	t.Cleanup(func() { _ = admin.DeleteTopics(context.Background(), topic) })
 
 	principal := "User:gokafka"
@@ -155,7 +155,7 @@ func TestIntegrationDeleteConsumerGroupOffsets(t *testing.T) {
 	if err := client.Admin().CreateTopic(ctx, topic, 1, 1); err != nil {
 		t.Fatal(err)
 	}
-	integrationWaitTopicReady()
+	integrationWaitTopicReady(t, client.Admin(), topic)
 	t.Cleanup(func() {
 		_ = client.Admin().DeleteTopics(context.Background(), topic)
 		client.Close()

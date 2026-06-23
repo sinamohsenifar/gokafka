@@ -1,8 +1,6 @@
 package protocol
 
 import (
-	"fmt"
-
 	"github.com/sinamohsenifar/gokafka/internal/wire"
 )
 
@@ -150,7 +148,7 @@ func decodeJoinGroupResponseLegacy(body []byte) (JoinGroupResponse, error) {
 		return JoinGroupResponse{}, err
 	}
 	if errCode != 0 && errCode != ErrorCodeMemberIDRequired {
-		return JoinGroupResponse{}, fmt.Errorf("protocol: join group error %d", errCode)
+		return JoinGroupResponse{}, apiError("join group", errCode)
 	}
 	gen, err := buf.ReadInt32()
 	if err != nil {
@@ -206,7 +204,7 @@ func decodeJoinGroupResponseFlex(body []byte) (JoinGroupResponse, error) {
 		return JoinGroupResponse{}, err
 	}
 	if errCode != 0 && errCode != ErrorCodeMemberIDRequired {
-		return JoinGroupResponse{}, fmt.Errorf("protocol: join group error %d", errCode)
+		return JoinGroupResponse{}, apiError("join group", errCode)
 	}
 	gen, err := buf.ReadInt32()
 	if err != nil {
