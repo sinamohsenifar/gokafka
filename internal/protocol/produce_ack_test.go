@@ -1,10 +1,10 @@
 package protocol_test
 
 import (
-	"encoding/binary"
 	"testing"
 
 	"github.com/sinamohsenifar/gokafka/internal/protocol"
+	"github.com/sinamohsenifar/gokafka/internal/wire"
 )
 
 func TestProduceRequestAcksEncoding(t *testing.T) {
@@ -15,10 +15,16 @@ func TestProduceRequestAcksEncoding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// null transactional_id (int16 -1) then acks int16
-	acks := int16(binary.BigEndian.Uint16(body[2:4]))
+	buf := wire.FromBytes(body)
+	if _, err := buf.ReadUvarint(); err != nil { // transactional_id (flex compact nullable)
+		t.Fatal(err)
+	}
+	acks, err := buf.ReadInt16()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if acks != -1 {
-		t.Fatalf("acks=%d want -1, body hex=%x", acks, body[:12])
+		t.Fatalf("acks=%d want -1, body hex=%x", acks, body[:min(12, len(body))])
 	}
 }
 
@@ -33,10 +39,26 @@ func TestProduceRequestTransactionalIDEncoding(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(body) < 8 || body[0] != 0 || body[1] != 6 {
-		t.Fatalf("unexpected transactional id prefix: %x", body[:8])
+	buf := wire.FromBytes(body)
+	txn, err := buf.ReadCompactString()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if string(body[2:8]) != "my-txn" {
-		t.Fatalf("txn id=%q", body[2:8])
+	if txn != "my-txn" {
+		t.Fatalf("txn id=%q", txn)
 	}
+	acks, err := buf.ReadInt16()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acks != -1 {
+		t.Fatalf("acks=%d", acks)
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

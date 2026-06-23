@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/sinamohsenifar/gokafka/internal/protocol"
+	"github.com/sinamohsenifar/gokafka/observe"
 )
 
 // Handler processes a single consumed record. Return error to stop the runner.
@@ -138,7 +139,14 @@ func (c *Consumer) heartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			_ = c.heartbeat(ctx)
+			if err := c.heartbeat(ctx); err != nil {
+				c.client.observe.Log(ctx, observe.LevelWarn, "consumer heartbeat failed", observe.Error(err))
+				if c.useNextGenGroup() {
+					_ = c.rejoin848(ctx)
+				} else if c.shouldRejoin(err) {
+					_ = c.rejoin(ctx)
+				}
+			}
 		}
 	}
 }
@@ -180,14 +188,18 @@ func (c *Consumer) Leave(ctx context.Context) error {
 	if c.useNextGenGroup() {
 		return c.leave848(ctx)
 	}
-	if c.memberID == "" {
+	c.mu.Lock()
+	memberID := c.memberID
+	group := c.group
+	c.mu.Unlock()
+	if memberID == "" {
 		return nil
 	}
 	coord, err := c.coordinator(ctx)
 	if err != nil {
 		return err
 	}
-	buf := protocol.EncodeLeaveGroupRequest(c.group, c.memberID)
+	buf := protocol.EncodeLeaveGroupRequest(group, memberID)
 	_, err = c.client.cluster.Request(ctx, coord, protocol.APILeaveGroup, protocol.VerLeaveGroup, buf)
 	return err
 }

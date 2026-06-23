@@ -53,9 +53,14 @@ type SASLConfig struct {
 	Username  string
 	Password  string
 	Token     string
+	// TokenProvider supplies OAuth bearer tokens before connect and on reconnect.
+	TokenProvider OAuthTokenProvider
 	// Kerberos / GSSAPI (requires external krb5 tooling or future optional module).
 	Kerberos KerberosConfig
 }
+
+// OAuthTokenProvider returns a fresh OAuth bearer token (OIDC / cloud IdP).
+type OAuthTokenProvider func(ctx context.Context) (token string, err error)
 
 // GSSAPITokenProvider exchanges SPNEGO tokens with an external Kerberos stack (kinit, krb5, AD).
 type GSSAPITokenProvider func(ctx context.Context, challenge []byte) ([]byte, error)
@@ -158,7 +163,18 @@ func Handshake(ctx context.Context, conn requester, sec Config) error {
 	case SASLGSSAPI:
 		return gssapi(ctx, conn, sec)
 	case SASLOAuth:
-		return saslAuthenticate(ctx, conn, buildOAuthMessage(sec.SASL.Token))
+		token := sec.SASL.Token
+		if token == "" && sec.SASL.TokenProvider != nil {
+			var err error
+			token, err = sec.SASL.TokenProvider(ctx)
+			if err != nil {
+				return fmt.Errorf("auth: oauth token provider: %w", err)
+			}
+		}
+		if token == "" {
+			return fmt.Errorf("auth: OAUTHBEARER requires Token or TokenProvider")
+		}
+		return saslAuthenticate(ctx, conn, buildOAuthMessage(token))
 	default:
 		return saslAuthenticate(ctx, conn, buildPlainMessage(sec.SASL.Username, sec.SASL.Password))
 	}

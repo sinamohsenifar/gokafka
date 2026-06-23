@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 
 // Conn is a Kafka broker connection with optional SASL/TLS.
 type Conn struct {
+	mu                sync.Mutex
 	addr              string
 	netConn           net.Conn
 	reader            *bufio.Reader
@@ -82,7 +84,14 @@ func (c *Conn) nextCorrelationID() int32 {
 }
 
 // Request sends a Kafka request and returns the full response frame.
+// Conn serializes requests; one in-flight RPC per TCP connection.
 func (c *Conn) Request(ctx context.Context, apiKey, apiVersion int16, body []byte) ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.requestLocked(ctx, apiKey, apiVersion, body)
+}
+
+func (c *Conn) requestLocked(ctx context.Context, apiKey, apiVersion int16, body []byte) ([]byte, error) {
 	corr := c.nextCorrelationID()
 	frame := protocol.EncodeRequest(protocol.RequestHeader{
 		APIKey: apiKey, APIVersion: apiVersion, CorrelationID: corr, ClientID: c.clientID,

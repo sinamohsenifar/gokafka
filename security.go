@@ -8,6 +8,7 @@ type (
 	SASLConfig            = auth.SASLConfig
 	KerberosConfig        = auth.KerberosConfig
 	GSSAPITokenProvider   = auth.GSSAPITokenProvider
+	OAuthTokenProvider    = auth.OAuthTokenProvider
 	SecurityProtocol      = auth.SecurityProtocol
 	SASLMechanism         = auth.SASLMechanism
 )

@@ -29,6 +29,15 @@ func newMemberUUID() string {
 		b[10:16])
 }
 
+func (c *Consumer) serverAssignor848() string {
+	switch c.client.cfg.Consumer.Assignor {
+	case AssignorCooperativeSticky:
+		return "uniform"
+	default:
+		return "range"
+	}
+}
+
 func (c *Consumer) joinAndAssign848(ctx context.Context) error {
 	if err := c.client.cluster.Refresh(ctx, c.topics); err != nil {
 		return err
@@ -53,19 +62,29 @@ func (c *Consumer) joinAndAssign848(ctx context.Context) error {
 		rebalanceMs = int32(c.client.cfg.Consumer.SessionTimeout / time.Millisecond)
 	}
 
-	assignor := "range"
+	assignor := c.serverAssignor848()
+	var instanceID *string
+	if id := c.client.cfg.Consumer.GroupInstanceID; id != "" {
+		instanceID = &id
+	}
 	for attempt := 0; attempt < 20; attempt++ {
+		c.mu.Lock()
+		memberEpoch := c.generation
+		c.mu.Unlock()
+
 		req := protocol.ConsumerGroupHeartbeatRequest{
 			GroupID:              c.group,
 			MemberID:             memberID,
-			MemberEpoch:          c.generation,
+			MemberEpoch:          memberEpoch,
+			InstanceID:           instanceID,
 			RebalanceTimeoutMs:   rebalanceMs,
 			SubscribedTopicNames: append([]string(nil), c.topics...),
 			ServerAssignor:       &assignor,
 		}
-		if c.generation > 0 {
+		if memberEpoch > 0 {
 			req.SubscribedTopicNames = nil
 			req.ServerAssignor = nil
+			req.InstanceID = nil
 			req.RebalanceTimeoutMs = -1
 			req.TopicPartitions = c.ownedTopicPartitions848()
 		}
@@ -73,7 +92,9 @@ func (c *Consumer) joinAndAssign848(ctx context.Context) error {
 		resp, err := c.sendGroupHeartbeat848(ctx, coord, req)
 		if err != nil {
 			if c.shouldRejoin848(err) {
+				c.mu.Lock()
 				c.generation = 0
+				c.mu.Unlock()
 				c.invalidateCoordinator()
 				coord, err = c.coordinator(ctx)
 				if err != nil {
@@ -125,8 +146,7 @@ func (c *Consumer) joinAndAssign848(ctx context.Context) error {
 			}
 		}
 		c.ensureHeartbeat()
-		_ = c.heartbeat848(ctx)
-		return nil
+		return c.heartbeat848(ctx)
 	}
 	return fmt.Errorf("gokafka: consumer group heartbeat join timed out")
 }
@@ -241,7 +261,6 @@ func (c *Consumer) leave848(ctx context.Context) error {
 	c.mu.Lock()
 	memberID := c.memberID
 	group := c.group
-	epoch := c.generation
 	c.mu.Unlock()
 	if memberID == "" {
 		return nil
@@ -256,6 +275,5 @@ func (c *Consumer) leave848(ctx context.Context) error {
 		MemberEpoch: -1,
 	}
 	_, err = c.sendGroupHeartbeat848(ctx, coord, req)
-	_ = epoch
 	return err
 }

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-06-24
+
+### Fixed
+
+- **transport.Conn race** — mutex-serialize requests on each TCP connection (safe async/multi-worker produce)
+- **Consumer data races** — mutex-protected `memberID`, `generation`, and `assignments` across join, poll, commit, leave
+- **Heartbeat failures** — log warnings and trigger rejoin instead of silently dropping group membership
+- **KIP-848** — respect `Assignor`/`GroupInstanceID`; cooperative assignor maps to server `uniform`
+
+### Added
+
+- **DescribeCluster wire API (60)** — primary path with metadata fallback
+- **OAuth helpers** — `OAuthBearerSecurity`, `OAuthBearerPlaintextSecurity`, `OAuthTokenProvider`
+- **Config validation** — OAuth token required; heartbeat interval must be less than session timeout
+- **Flex protocol caps** — Produce v9, Fetch v12, JoinGroup v6, OffsetCommit v8, DescribeGroups v5, AlterConfigs v2
+- Transport concurrency test (`TestConnRequestConcurrent`)
+- Docker compose: `KAFKA_GROUP_COORDINATOR_REBALANCE_PROTOCOL=consumer` for KIP-848 CI
+
+### Changed
+
+- Documentation reconciled for zstd, GSSAPI, API version matrix, and auto-commit defaults
+
 ## [0.21.0] - 2026-06-24
 
 ### Added

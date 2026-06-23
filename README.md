@@ -11,7 +11,7 @@ GoKafka is a pure Go client for Apache Kafka. It speaks the Kafka binary protoco
 The API is built around `context.Context`, functional options, and explicit error types. It targets Kafka **3.4+** and **KRaft** clusters, with negotiated API versions at connect time.
 
 ```bash
-go get github.com/sinamohsenifar/gokafka@v0.20.3
+go get github.com/sinamohsenifar/gokafka@v0.22.0
 ```
 
 **Requirements:** Go 1.22+ · Kafka 3.4+ (KRaft recommended; 4.x is KRaft-only). CI tests Go 1.22–1.24 against Kafka 3.9.2 and 4.3.0.
@@ -47,8 +47,9 @@ Several mature Kafka clients exist for Go. They differ mainly in dependencies, d
 | **Cooperative rebalance** | Yes | Yes | Partial | Yes | Yes |
 | **Admin client** | Yes | Yes | Partial | Yes | Yes |
 | **ACL admin** | Yes | Yes | No | Yes | Yes |
-| **zstd compression** | No | Yes | Yes | Yes | Yes |
-| **Kerberos (GSSAPI)** | Planned | Yes | No | Yes | Yes |
+| **zstd compression** | Yes (pure Go) | Yes | Yes | Yes | Yes |
+| **GSSAPI (SPNEGO pass-through)** | Yes | Yes | No | Yes | Yes |
+| **Kerberos (GSSAPI)** | SPNEGO pass-through | Yes | No | Yes | Yes |
 | **Schema Registry client** | Yes (REST + wire) | Via plugins | No | No | Via schema registry client |
 
 **When GoKafka fits well**
@@ -59,7 +60,7 @@ Several mature Kafka clients exist for Go. They differ mainly in dependencies, d
 
 **When to consider alternatives**
 
-- You need **zstd** compression or **Kerberos** today—use franz-go or confluent-kafka-go.
+- You need **full in-process Kerberos/KDC** today—use franz-go or confluent-kafka-go (GoKafka supports SPNEGO token pass-through only).
 - You already standardize on **librdkafka** (Confluent platform, existing ops tooling)—confluent-kafka-go is the natural choice.
 - You want a minimal consumer-only library with a smaller API surface—segmentio/kafka-go is lightweight for read-heavy workloads.
 
@@ -77,7 +78,7 @@ GoKafka covers idempotent produce, transactions, consumer groups, admin, TLS/SAS
 - **Idempotent produce** enabled by default (`acks=all`, sequence reservation on retry)
 - **Transactional produce** (`BeginTransaction`, `ProduceWithinTxn`, `Commit` / `Abort`)
 - Partitioners: hash (key-based) and round-robin
-- Compression: none, gzip, snappy, lz4 (pure Go; zstd is not supported)
+- Compression: none, gzip, snappy, lz4, **zstd** (pure Go, stdlib-only)
 - Record headers and timestamps
 
 ### Consumer

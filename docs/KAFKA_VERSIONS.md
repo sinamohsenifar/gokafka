@@ -20,9 +20,12 @@ GoKafka targets **Apache Kafka 3.4+** through the latest 3.9.x / 4.x releases us
 
 | API | Client max | Kafka 3.4 | Kafka 3.9 | Notes |
 |-----|------------|-----------|-----------|-------|
-| Produce | 7 | yes | yes | Multi-record batching per partition |
-| Fetch | 11 | yes | yes | Consumer groups, pause/resume |
-| Metadata | 8 | yes | yes | Cluster/topic discovery |
+| Produce | 9 | yes | yes | Flex v9+ when broker supports |
+| Fetch | 12 | yes | yes | Flex v12+ when broker supports |
+| Metadata | 12 | yes | yes | Topic UUIDs (v10+) |
+| JoinGroup | 6 | yes | yes | Flex v6+ |
+| OffsetCommit | 8 | yes | yes | Flex v8+ |
+| DescribeCluster | 1 | 3.7+ | yes | Wire API 60 with metadata fallback |
 | CreateTopics | 4 | yes | yes | `TopicSpec` with configs |
 | DescribeConfigs | 4 | yes | yes | Topic + broker configs |
 | CreatePartitions | 2 | yes | yes | Flex v2 |

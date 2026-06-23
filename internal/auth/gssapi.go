@@ -9,8 +9,8 @@ import (
 
 func gssapi(ctx context.Context, conn requester, sec Config) error {
 	k := sec.SASL.Kerberos
-	if k.Principal == "" && k.TokenProvider == nil && len(k.InitToken) == 0 {
-		return fmt.Errorf("auth: GSSAPI requires KerberosConfig.Principal and TokenProvider or InitToken")
+	if k.TokenProvider == nil && len(k.InitToken) == 0 {
+		return fmt.Errorf("auth: GSSAPI requires InitToken or TokenProvider")
 	}
 	token := append([]byte(nil), k.InitToken...)
 	for round := 0; round < 32; round++ {

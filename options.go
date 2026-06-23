@@ -354,3 +354,26 @@ func SCRAMPlaintextSecurity(user, pass string, mech SASLMechanism) SecurityConfi
 func TLSOnlySecurity(tls TLSConfig) SecurityConfig {
 	return SecurityConfig{Protocol: SecuritySSL, TLS: tls}
 }
+
+// OAuthBearerSecurity configures SASL/OAUTHBEARER over SASL_SSL.
+func OAuthBearerSecurity(token string, tls TLSConfig) SecurityConfig {
+	return SecurityConfig{
+		Protocol: SecuritySASLSSL,
+		TLS:      tls,
+		SASL: SASLConfig{
+			Mechanism: SASLOAuth,
+			Token:     token,
+		},
+	}
+}
+
+// OAuthBearerPlaintextSecurity configures SASL/OAUTHBEARER over SASL_PLAINTEXT (dev only).
+func OAuthBearerPlaintextSecurity(token string) SecurityConfig {
+	return SecurityConfig{
+		Protocol: SecuritySASLPlaintext,
+		SASL: SASLConfig{
+			Mechanism: SASLOAuth,
+			Token:     token,
+		},
+	}
+}

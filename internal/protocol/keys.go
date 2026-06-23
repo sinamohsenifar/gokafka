@@ -33,22 +33,22 @@ const (
 // Negotiated API version caps (client max; broker may be lower).
 const (
 	VerMetadata         int16 = 12
-	VerProduce          int16 = 7
-	VerFetch            int16 = 11
+	VerProduce          int16 = 9
+	VerFetch            int16 = 12
 	VerListOffsets      int16 = 3
-	VerOffsetCommit     int16 = 7
+	VerOffsetCommit     int16 = 8
 	VerOffsetFetch      int16 = 5
 	VerFindCoordinator  int16 = 1
-	VerJoinGroup        int16 = 5
+	VerJoinGroup        int16 = 6
 	VerSyncGroup        int16 = 3
 	VerHeartbeat        int16 = 1
 	VerLeaveGroup       int16 = 2
 	VerCreateTopics     int16 = 4
 	VerDeleteTopics     int16 = 6
 	VerListGroups       int16 = 2
-	VerDescribeGroups   int16 = 4
+	VerDescribeGroups   int16 = 5
 	VerDescribeConfigs  int16 = 4
-	VerAlterConfigs            int16 = 1
+	VerAlterConfigs            int16 = 2
 	VerCreatePartitions        int16 = 2
 	VerDeleteGroups            int16 = 2
 	VerIncrementalAlterConfigs int16 = 0

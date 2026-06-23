@@ -22,7 +22,7 @@ This document maps [Apache Kafka KIPs](https://cwiki.apache.org/confluence/displ
 | KIP-130 | Idempotent producer + transactions | ✅ | `TestIntegrationTransactionEOS` |
 | KIP-185 | Incremental fetch / aborted txns (fetch v4+) | ✅ | Transactional consume `read_committed` |
 | KIP-219 | Request/response headers (SASL) | ✅ | Security integration suite |
-| KIP-482 | Flexible versions (produce/fetch v9+/v12+) | 🔶 | Flex paths exist; caps below broker max on several admin APIs |
+| KIP-482 | Flexible versions (produce/fetch v9+/v12+) | ✅ | Flex caps raised in v0.22 |
 | KIP-896 | API version baseline (4.0) | ✅ | `docs/KAFKA_VERSIONS.md`, `TestIntegrationNegotiatedVersions` |
 
 ## Compression
@@ -65,7 +65,7 @@ Compression is applied only when compressed size is smaller than uncompressed (b
 |---------|--------|-------|
 | PLAINTEXT / SSL / mTLS | ✅ | `integration_security_test.go` |
 | SASL/PLAIN, SCRAM-256/512 | ✅ | Security integration |
-| SASL/GSSAPI (Kerberos) | 🚧 | Config types only |
+| SASL/GSSAPI (Kerberos) | ✅ SPNEGO | `TokenProvider` / `InitToken` |
 | OAuthBearer | ✅ | `TestBuildOAuthMessage`; optional `integration && oauth` profile |
 
 ## Transactions (EOS)

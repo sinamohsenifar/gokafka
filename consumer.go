@@ -42,9 +42,10 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 	}
 	c.mu.Lock()
 	c.group = c.client.cfg.ConsumerGroup
+	needJoin := len(c.assignments) == 0
 	c.mu.Unlock()
 
-	if len(c.assignments) == 0 {
+	if needJoin {
 		if err := c.joinAndAssign(ctx); err != nil {
 			c.client.observe.Metrics.OnConsume(0, err)
 			c.client.observe.Log(ctx, observe.LevelError, "consumer join failed", observe.Error(err))
@@ -297,7 +298,9 @@ joinLoop:
 			}
 			joined, err = protocol.DecodeJoinGroupResponse(rb)
 			if errors.Is(err, protocol.ErrMemberIDRequired) {
+				c.mu.Lock()
 				c.memberID = joined.MemberID
+				c.mu.Unlock()
 				continue
 			}
 			if code, ok := protocol.APIErrorCode(err); ok && protocol.CoordinatorRetriable(code) {
@@ -315,8 +318,10 @@ joinLoop:
 			break joinInner
 		}
 
+		c.mu.Lock()
 		c.memberID = joined.MemberID
 		c.generation = joined.GenerationID
+		c.mu.Unlock()
 
 		syncAssignments := map[string][]byte{joined.MemberID: {}}
 		if joined.MemberID == joined.LeaderID {
@@ -470,14 +475,19 @@ func (c *Consumer) applyAssignmentIncrementalLocked(ctx context.Context, parsed 
 }
 
 func (c *Consumer) loadCommittedOffsets(ctx context.Context, coord int32) error {
-	if len(c.assignments) == 0 {
+	c.mu.Lock()
+	assignments := append([]partitionOffset(nil), c.assignments...)
+	group := c.group
+	memberID := c.memberID
+	c.mu.Unlock()
+	if len(assignments) == 0 {
 		return nil
 	}
-	parts := make([]protocol.OffsetFetchPartition, len(c.assignments))
-	for i, a := range c.assignments {
+	parts := make([]protocol.OffsetFetchPartition, len(assignments))
+	for i, a := range assignments {
 		parts[i] = protocol.OffsetFetchPartition{Topic: a.topic, Partition: a.partition}
 	}
-	body := protocol.EncodeOffsetFetchRequest(c.group, c.memberID, parts)
+	body := protocol.EncodeOffsetFetchRequest(group, memberID, parts)
 	rb, err := c.client.cluster.Request(ctx, coord, protocol.APIOffsetFetch, protocol.VerOffsetFetch, body)
 	if err != nil {
 		return err

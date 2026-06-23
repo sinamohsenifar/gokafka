@@ -18,8 +18,8 @@ Reference for what GoKafka supports today, how it maps to Kafka ecosystem featur
 | `PLAIN` | ✅ | Dev/test; always pair with TLS in production |
 | `SCRAM-SHA-256` | ✅ | Production password auth |
 | `SCRAM-SHA-512` | ✅ | Production password auth (recommended) |
-| `OAUTHBEARER` | ✅ wire | Cloud IdP / OIDC token auth |
-| `GSSAPI` (Kerberos) | 🔜 | Enterprise AD/Kerberos SSO |
+| `OAUTHBEARER` | ✅ | Cloud IdP / OIDC token auth (`OAuthBearerSecurity`, `TokenProvider`) |
+| `GSSAPI` (Kerberos) | ✅ SPNEGO pass-through | Enterprise AD/Kerberos via external krb5 + `TokenProvider` |
 
 ### TLS options
 
@@ -37,7 +37,7 @@ Reference for what GoKafka supports today, how it maps to Kafka ecosystem featur
 | Confluent wire | `EncodeSchemaWire` / `DecodeSchemaWire` | Schema Registry–managed schemas |
 | Record headers | `Record.Headers` | Trace ids, content-type, metadata |
 
-Compression on produce: **none**, **gzip**, **snappy**, **lz4** (stdlib / pure Go). **zstd** is not supported (no stdlib implementation).
+Compression on produce: **none**, **gzip**, **snappy**, **lz4**, **zstd** (pure Go, stdlib-only).
 
 ## Client roles & use cases
 
@@ -56,8 +56,9 @@ Compression on produce: **none**, **gzip**, **snappy**, **lz4** (stdlib / pure G
 | Pattern | API | Use case |
 |---------|-----|----------|
 | Poll loop | `Consumer.Poll` | Custom processing, backpressure control |
-| Worker pool | `Consumer.Run` + `Concurrency.ConsumerWorkers` | Parallel handlers with commit-after-success |
+| Worker pool | `Consumer.Run` + `Concurrency.ConsumerWorkers` | Parallel handlers; commit after success when `WithAutoCommit(true)` |
 | Consumer groups | `WithConsumerGroup` | Scalable consumption, partition assignment |
+| Next-gen groups (KIP-848) | `WithGroupProtocol(GroupProtocolNextGen)` | Broker-driven assignment (Kafka 3.7+ / 4.x) |
 | Static membership | `WithGroupInstanceID` | Faster rebalance on rolling restarts |
 | Cooperative sticky | `AssignorCooperativeSticky` | Incremental rebalance (KIP-429 style) |
 | Pause / resume | `Pause` / `Resume` | Maintenance, drain control |
@@ -73,7 +74,7 @@ Compression on produce: **none**, **gzip**, **snappy**, **lz4** (stdlib / pure G
 | Configs | `DescribeTopicConfigs`, `AlterTopicConfigs`, `IncrementalAlterTopicConfigs` |
 | Groups | `ListConsumerGroups`, `DescribeConsumerGroups`, `DeleteConsumerGroups` |
 | Offsets | `DeleteConsumerGroupOffsets` |
-| Cluster | `DescribeCluster` (metadata-based) |
+| Cluster | `DescribeCluster` (wire API 60 with metadata fallback) |
 | ACLs | `CreateACLs`, `DescribeACLs`, `DeleteACLs` |
 
 ## Listener layout (integration Docker stack)
@@ -90,10 +91,12 @@ The `docker-compose.yml` stack exposes:
 
 Internal broker traffic uses `INTERNAL://kafka:29092` (PLAINTEXT). Controller uses `CONTROLLER://kafka:29093`.
 
+KIP-848 tests: set `KAFKA_GROUP_COORDINATOR_REBALANCE_PROTOCOL=consumer` (included in compose for Kafka 3.7+ / 4.x images).
+
 ### Test credentials (local only)
 
 | User | Password | Mechanisms |
-|------|----------|--------------|
+|------|----------|------------|
 | `gokafka` | `gokafka-secret` | PLAIN (JAAS), SCRAM-SHA-256/512 (init script) |
 | `alice` | `alice-secret` | PLAIN (JAAS) |
 | `admin` | `admin-secret` | Inter-broker PLAIN |
@@ -114,12 +117,9 @@ go test -tags=integration -count=1 -timeout=5m ./...
 
 ## Gaps & roadmap (not yet in GoKafka)
 
-- Kerberos / GSSAPI
-- zstd compression
+- Full in-process Kerberos/KDC (SPNEGO pass-through only today)
 - Share consumer groups (KIP-932)
-- Full flexible protocol for all API versions (v9+ metadata, join, fetch flex paths)
-- DescribeCluster wire API (API 60) — metadata fallback today
-- OAuth token refresh / OIDC helper utilities
+- OAuth automatic reconnect refresh on long-lived connections (TokenProvider at dial today)
 - Kafka Connect, ksqlDB, Flink — external systems; Schema Registry REST client is supported
 
 ## Related ecosystem services

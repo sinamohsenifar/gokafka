@@ -1,6 +1,7 @@
 package gokafka
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/sinamohsenifar/gokafka/internal/auth"
@@ -74,6 +75,16 @@ func (c Config) validate() error {
 	}
 	if c.Producer.Idempotent && c.Producer.Acks != AcksAll {
 		return ErrInvalidProducerConfig
+	}
+	if c.Security.SASLEnabled() && c.Security.SASL.Mechanism == auth.SASLOAuth {
+		if c.Security.SASL.Token == "" && c.Security.SASL.TokenProvider == nil {
+			return fmt.Errorf("gokafka: OAUTHBEARER requires Token or TokenProvider")
+		}
+	}
+	if c.Consumer.SessionTimeout > 0 && c.Consumer.HeartbeatInterval > 0 {
+		if c.Consumer.HeartbeatInterval >= c.Consumer.SessionTimeout {
+			return fmt.Errorf("gokafka: HeartbeatInterval must be less than SessionTimeout")
+		}
 	}
 	return nil
 }
