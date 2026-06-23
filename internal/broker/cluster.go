@@ -10,6 +10,7 @@ import (
 	"github.com/sinamohsenifar/gokafka/internal/auth"
 	"github.com/sinamohsenifar/gokafka/internal/protocol"
 	"github.com/sinamohsenifar/gokafka/internal/transport"
+	"github.com/sinamohsenifar/gokafka/internal/wire"
 	"github.com/sinamohsenifar/gokafka/observe"
 )
 
@@ -190,6 +191,30 @@ func (c *Cluster) Metadata() protocol.MetadataResponse {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.meta
+}
+
+// TopicNameByID resolves a topic UUID from cached metadata (requires metadata v10+).
+func (c *Cluster) TopicNameByID(id wire.UUID) (string, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, t := range c.meta.Topics {
+		if t.TopicID == id {
+			return t.Name, true
+		}
+	}
+	return "", false
+}
+
+// TopicIDByName returns the topic UUID from cached metadata.
+func (c *Cluster) TopicIDByName(name string) (wire.UUID, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, t := range c.meta.Topics {
+		if t.Name == name {
+			return t.TopicID, true
+		}
+	}
+	return wire.UUID{}, false
 }
 
 func (c *Cluster) LeaderBroker(topic string, partition int32) (protocol.Broker, error) {

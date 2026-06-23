@@ -26,11 +26,13 @@ const (
 	APIOffsetDelete             int16 = 47
 	APISaslHandshake    int16 = 17
 	APISaslAuthenticate int16 = 36
+	APIConsumerGroupHeartbeat int16 = 68
+	APIConsumerGroupDescribe  int16 = 69
 )
 
 // Negotiated API version caps (client max; broker may be lower).
 const (
-	VerMetadata         int16 = 8
+	VerMetadata         int16 = 12
 	VerProduce          int16 = 7
 	VerFetch            int16 = 11
 	VerListOffsets      int16 = 3
@@ -54,4 +56,5 @@ const (
 	VerApiVersions      int16 = 2
 	VerSaslHandshake    int16 = 1
 	VerSaslAuthenticate int16 = 1
+	VerConsumerGroupHeartbeat int16 = 1
 )

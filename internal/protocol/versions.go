@@ -69,6 +69,8 @@ func ClientVersion(apiKey int16) int16 {
 		return VerAddPartitionsTxn
 	case APIEndTxn:
 		return VerEndTxn
+	case APIConsumerGroupHeartbeat:
+		return VerConsumerGroupHeartbeat
 	default:
 		return 0
 	}

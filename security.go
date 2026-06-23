@@ -3,12 +3,13 @@ package gokafka
 import "github.com/sinamohsenifar/gokafka/internal/auth"
 
 type (
-	SecurityConfig   = auth.Config
-	TLSConfig        = auth.TLSConfig
-	SASLConfig       = auth.SASLConfig
-	KerberosConfig   = auth.KerberosConfig
-	SecurityProtocol = auth.SecurityProtocol
-	SASLMechanism    = auth.SASLMechanism
+	SecurityConfig        = auth.Config
+	TLSConfig             = auth.TLSConfig
+	SASLConfig            = auth.SASLConfig
+	KerberosConfig        = auth.KerberosConfig
+	GSSAPITokenProvider   = auth.GSSAPITokenProvider
+	SecurityProtocol      = auth.SecurityProtocol
+	SASLMechanism         = auth.SASLMechanism
 )
 
 const (

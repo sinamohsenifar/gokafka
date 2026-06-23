@@ -52,8 +52,10 @@ func flexibleRequestHeader(apiKey, apiVersion int16) bool {
 		return apiVersion >= 3
 	case APIAddPartitionsTxn:
 		return apiVersion >= 3
-	case APIEndTxn:
+	case 	APIEndTxn:
 		return apiVersion >= 3
+	case APIConsumerGroupHeartbeat:
+		return apiVersion >= 0
 	default:
 		return false
 	}

@@ -78,12 +78,18 @@ func TestWithAutoCommit(t *testing.T) {
 	}
 }
 
-func TestZstdCompressionRejected(t *testing.T) {
-	_, err := gokafka.NewConfig([]string{"localhost:9092"},
-		gokafka.WithProducer(gokafka.ProducerConfig{Compression: gokafka.CompressionZstd}),
+func TestZstdCompressionRoundTrip(t *testing.T) {
+	cfg, err := gokafka.NewConfig([]string{"localhost:9092"},
+		gokafka.WithProducer(gokafka.ProducerConfig{
+			Compression: gokafka.CompressionZstd,
+			Acks:        gokafka.AcksAll,
+		}),
 	)
-	if err == nil {
-		t.Fatal("expected zstd validation error")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Producer.Compression != gokafka.CompressionZstd {
+		t.Fatal("expected zstd compression")
 	}
 }
 

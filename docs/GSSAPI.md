@@ -2,9 +2,9 @@
 
 ## Status
 
-**Not yet implemented** in stdlib-only builds. Config types exist (`KerberosConfig`, `SASLGSSAPI`) but handshake returns `auth.ErrGSSAPINotSupported`.
+**SPNEGO pass-through implemented** (v0.21.0). GoKafka performs multi-round SASL GSSAPI when you supply an initial token and/or a `TokenProvider`. Full KDC/keytab parsing remains out of scope for stdlib-only builds.
 
-## Why it is hard in pure Go
+## Why full Kerberos is hard in pure Go
 
 Kafka GSSAPI SASL uses **SPNEGO** over SASL, which typically requires:
 
@@ -13,6 +13,26 @@ Kafka GSSAPI SASL uses **SPNEGO** over SASL, which typically requires:
 - Channel binding considerations for TLS + SASL_SSL
 
 The Go standard library provides `crypto` primitives but not a full Kerberos/GSS-API stack.
+
+## Supported pattern (v0.21+)
+
+Use an external Kerberos stack (`kinit`, MIT krb5, Active Directory tools) to obtain SPNEGO tokens, then wire them through GoKafka:
+
+```go
+gokafka.WithSecurity(gokafka.SecurityConfig{
+    Protocol: gokafka.SecuritySASLSSL,
+    SASL: gokafka.SASLConfig{
+        Mechanism: gokafka.SASLGSSAPI,
+        Kerberos: gokafka.KerberosConfig{
+            Principal: "kafka/client@REALM",
+            InitToken: firstToken, // optional first outbound token
+            TokenProvider: func(ctx context.Context, challenge []byte) ([]byte, error) {
+                return yourKrb5Exchange(ctx, challenge)
+            },
+        },
+    },
+})
+```
 
 ## Alternatives used in production
 
@@ -24,22 +44,6 @@ The Go standard library provides `crypto` primitives but not a full Kerberos/GSS
 
 ## Roadmap
 
-1. Document OAuthBearer integration test (docker JAAS) — **v0.20**
-2. Evaluate minimal SPNEGO token pass-through for pre-acquired tickets — research spike
-3. Full KDC integration is **out of scope** for stdlib-only v1; may require optional build tag in future major version
-
-## Configuration (future)
-
-```go
-gokafka.WithSecurity(gokafka.SecurityConfig{
-    SASL: gokafka.SASLConfig{
-        Mechanism: gokafka.SASLGSSAPI,
-        Kerberos: gokafka.KerberosConfig{
-            Principal: "kafka/client@REALM",
-            Keytab:    "/path/to/client.keytab",
-        },
-    },
-})
-```
-
-Until implemented, the client fails fast at handshake with a clear error pointing to this document.
+1. OAuthBearer integration test (docker JAAS) — **v0.20** ✅
+2. SPNEGO token pass-through — **v0.21** ✅
+3. Full KDC/keytab integration — **out of scope** for stdlib-only v1; optional build tag in a future major version

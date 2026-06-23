@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-06-24
+
+### Added
+
+- **ZSTD compression** — pure-Go encoder/decoder for Kafka codec 4 (`internal/compress/zstd/`); produce and fetch supported with `CompressionZstd`
+- Integration test `TestIntegrationCompressionZstd`
+- **Fetch buffer pools** — `internal/bufpool` reused for broker response reads (`internal/transport/conn.go`)
+- **GSSAPI SPNEGO pass-through** — multi-round SASL via `KerberosConfig.InitToken` and `KerberosConfig.TokenProvider`
+- **KIP-848 (experimental)** — `ConsumerGroupHeartbeat` wire + `GroupProtocolNextGen` consumer path; metadata topic IDs (v10+); integration test `TestIntegrationConsumerGroup848`
+
+### Changed
+
+- `CompressionZstd` is no longer rejected at config validation
+- Metadata negotiation cap raised to v12 for topic UUID resolution (KIP-848 assignments)
+
 ## [0.20.14] - 2026-06-23
 
 ### Fixed

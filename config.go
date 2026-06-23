@@ -75,9 +75,6 @@ func (c Config) validate() error {
 	if c.Producer.Idempotent && c.Producer.Acks != AcksAll {
 		return ErrInvalidProducerConfig
 	}
-	if c.Producer.Compression == CompressionZstd {
-		return ErrUnsupportedCompression
-	}
 	return nil
 }
 

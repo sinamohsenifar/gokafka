@@ -16,7 +16,6 @@ var (
 	ErrTransactionAborted = errors.New("gokafka: transaction aborted")
 	ErrRetriable            = errors.New("gokafka: retriable error")
 	ErrInvalidProducerConfig = errors.New("gokafka: idempotent producer requires acks=all")
-	ErrUnsupportedCompression = errors.New("gokafka: zstd compression is not supported (stdlib-only client)")
 )
 
 // ErrorCode mirrors Kafka protocol error codes.

@@ -66,3 +66,21 @@ func TestLZ4RoundTrip(t *testing.T) {
 		t.Fatal("lz4 roundtrip mismatch")
 	}
 }
+
+func TestZstdRoundTrip(t *testing.T) {
+	in := bytes.Repeat([]byte("kafka-zstd-"), 48)
+	out, err := compress.Compress(compress.CodecZstd, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) >= len(in) {
+		t.Fatalf("expected compression, got %d >= %d", len(out), len(in))
+	}
+	back, err := compress.Decompress(compress.CodecZstd, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(in, back) {
+		t.Fatal("zstd roundtrip mismatch")
+	}
+}

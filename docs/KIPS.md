@@ -33,7 +33,7 @@ This document maps [Apache Kafka KIPs](https://cwiki.apache.org/confluence/displ
 | gzip | ✅ | `TestIntegrationCompressionGzip` |
 | snappy | ✅ | `TestIntegrationCompressionSnappy` (literal-framed encoder) |
 | lz4 | ✅ | `TestIntegrationCompressionLZ4`, `TestLZ4RoundTrip` |
-| zstd | 🚧 | Frame detection; decompressor roadmap (`docs/ZSTD.md`) |
+| zstd | ✅ | `TestIntegrationCompressionZstd`, `TestZstdRoundTrip` |
 
 Compression is applied only when compressed size is smaller than uncompressed (broker-safe).
 
@@ -45,7 +45,7 @@ Compression is applied only when compressed size is smaller than uncompressed (b
 | KIP-394 | `MEMBER_ID_REQUIRED` join retry | ✅ | Consumer integration (implicit) |
 | KIP-345 | Static membership (`group.instance.id`) | ✅ | `TestIntegrationStaticMembership` |
 | KIP-429 | Cooperative sticky assignor | ✅ | `TestIntegrationCooperativeStickyRebalance` |
-| KIP-848 | Consumer group protocol (next-gen) | ❌ | Roadmap |
+| KIP-848 | Consumer group protocol (next-gen) | 🔶 | `TestIntegrationConsumerGroup848` (broker must enable new protocol) |
 
 ## Admin & metadata
 
@@ -84,7 +84,7 @@ Compression is applied only when compressed size is smaller than uncompressed (b
 | KIP | Feature | Status |
 |-----|---------|--------|
 | KIP-932 | Share consumer groups | ❌ Roadmap |
-| KIP-848 | New consumer protocol | ❌ Roadmap |
+| KIP-848 | New consumer protocol | 🔶 Experimental (`GroupProtocolNextGen`) |
 
 ## Best practices enforced in GoKafka
 

@@ -1,6 +1,6 @@
 # ZSTD compression status
 
-GoKafka is **stdlib-only** (`go.mod` has zero third-party dependencies). The Go standard library does not include ZSTD (RFC 8878).
+GoKafka is **stdlib-only** (`go.mod` has zero third-party dependencies). ZSTD (RFC 8878) is implemented in pure Go under `internal/compress/zstd/`.
 
 ## Kafka usage
 
@@ -9,17 +9,17 @@ GoKafka is **stdlib-only** (`go.mod` has zero third-party dependencies). The Go 
 
 ## Current behavior
 
-- `CompressionZstd` is **rejected at config validation** with a clear error (`ErrUnsupportedCompression`)
-- `internal/compress` returns an explicit error if ZSTD attribute is seen on fetch
+- `CompressionZstd` is supported for produce and fetch
+- `internal/compress` encodes/decodes standard ZSTD frames (same as Java clients and brokers)
+- Decompression respects `limits.MaxDecompressedBytes`
+- Produce skips compression when compressed size is not smaller than uncompressed payload
 
-## Implementation roadmap
+## Implementation
 
-1. **v0.21** — Pure-Go ZSTD decompressor for consumer fetch (read path first)
-2. **v0.22** — ZSTD compressor for produce when payload size reduction justifies CPU cost
-3. Benchmark against gzip/snappy/lz4 on representative payloads
-
-A full ZSTD implementation is ~several thousand lines; it will live under `internal/compress/zstd/` without adding `go.mod` dependencies.
+- **Decoder** — adapted from the Go standard library `internal/zstd` decompressor (BSD license)
+- **Encoder** — pure-Go block encoder with predefined FSE tables and greedy LZ matching
+- Public API: `compress.ZstdEncode` / `compress.ZstdDecode` and `compress.Compress` / `compress.Decompress` with `CodecZstd`
 
 ## Workaround
 
-Use **gzip**, **snappy**, or **lz4** (all supported in pure Go today), or broker-side compression with client `compression=none` if CPU on brokers is cheaper.
+If you prefer not to use ZSTD, **gzip**, **snappy**, and **lz4** remain available.

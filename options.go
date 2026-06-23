@@ -65,6 +65,9 @@ func WithConsumer(cs ConsumerConfig) Option {
 		if cs.Assignor != 0 {
 			c.Consumer.Assignor = cs.Assignor
 		}
+		if cs.GroupProtocol != 0 {
+			c.Consumer.GroupProtocol = cs.GroupProtocol
+		}
 		if cs.IsolationLevel != 0 {
 			c.Consumer.IsolationLevel = cs.IsolationLevel
 		}
@@ -77,6 +80,11 @@ func WithConsumer(cs ConsumerConfig) Option {
 // WithAutoCommit enables automatic offset commits in Consumer.Run after successful handlers.
 func WithAutoCommit(enabled bool) Option {
 	return func(c *Config) { c.Consumer.AutoCommit = enabled }
+}
+
+// WithGroupProtocol selects classic or KIP-848 next-gen consumer group protocol.
+func WithGroupProtocol(p GroupProtocol) Option {
+	return func(c *Config) { c.Consumer.GroupProtocol = p }
 }
 
 // WithGroupInstanceID sets static group membership id (group.instance.id).
@@ -162,6 +170,14 @@ const (
 	ProducerPartitionRoundRobin
 )
 
+// GroupProtocol selects classic JoinGroup/SyncGroup or KIP-848 ConsumerGroupHeartbeat.
+type GroupProtocol int
+
+const (
+	GroupProtocolClassic GroupProtocol = iota
+	GroupProtocolNextGen                 // KIP-848 experimental
+)
+
 // ConsumerConfig controls group consumption.
 type ConsumerConfig struct {
 	AutoCommit           bool
@@ -171,6 +187,7 @@ type ConsumerConfig struct {
 	HeartbeatInterval    time.Duration
 	MaxPollRecords       int
 	Assignor             PartitionAssignor
+	GroupProtocol        GroupProtocol
 	IsolationLevel       IsolationLevel
 	GroupInstanceID      string
 }

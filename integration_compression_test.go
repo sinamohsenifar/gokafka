@@ -85,3 +85,7 @@ func TestIntegrationCompressionSnappy(t *testing.T) {
 func TestIntegrationCompressionLZ4(t *testing.T) {
 	integrationCompressionProduceConsume(t, gokafka.CompressionLZ4)
 }
+
+func TestIntegrationCompressionZstd(t *testing.T) {
+	integrationCompressionProduceConsume(t, gokafka.CompressionZstd)
+}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sinamohsenifar/gokafka/internal/auth"
+	"github.com/sinamohsenifar/gokafka/internal/bufpool"
 	"github.com/sinamohsenifar/gokafka/internal/limits"
 	"github.com/sinamohsenifar/gokafka/internal/protocol"
 )
@@ -99,20 +100,38 @@ func (c *Conn) Request(ctx context.Context, apiKey, apiVersion int16, body []byt
 		return nil, fmt.Errorf("transport: write: %w", err)
 	}
 
-	sizeBuf := make([]byte, 4)
+	sizeBuf := bufpool.Default.Get()
+	if cap(sizeBuf) < 4 {
+		sizeBuf = bufpool.Grow(sizeBuf, 4)
+	}
+	sizeBuf = sizeBuf[:4]
 	if _, err := io.ReadFull(c.reader, sizeBuf); err != nil {
+		bufpool.Default.Put(sizeBuf)
 		return nil, fmt.Errorf("transport: read size: %w", err)
 	}
 	size := int(sizeBuf[0])<<24 | int(sizeBuf[1])<<16 | int(sizeBuf[2])<<8 | int(sizeBuf[3])
 	if size < 0 || size > c.maxResponseBytes {
+		bufpool.Default.Put(sizeBuf)
 		return nil, fmt.Errorf("transport: response size %d exceeds limit %d", size, c.maxResponseBytes)
 	}
-	resp := make([]byte, 4+size)
+	frameLen := 4 + size
+	resp := bufpool.Default.Get()
+	if cap(resp) < frameLen {
+		bufpool.Default.Put(resp)
+		resp = make([]byte, frameLen)
+	} else {
+		resp = resp[:frameLen]
+	}
 	copy(resp, sizeBuf)
+	bufpool.Default.Put(sizeBuf)
 	if _, err := io.ReadFull(c.reader, resp[4:]); err != nil {
+		bufpool.Default.Put(resp)
 		return nil, fmt.Errorf("transport: read body: %w", err)
 	}
-	return resp, nil
+	out := make([]byte, len(resp))
+	copy(out, resp)
+	bufpool.Default.Put(resp)
+	return out, nil
 }
 
 func ResponseBody(raw []byte) ([]byte, error) {

@@ -144,6 +144,9 @@ func (c *Consumer) heartbeatLoop(ctx context.Context) {
 }
 
 func (c *Consumer) heartbeat(ctx context.Context) error {
+	if c.useNextGenGroup() {
+		return c.heartbeat848(ctx)
+	}
 	c.mu.Lock()
 	memberID := c.memberID
 	generation := c.generation
@@ -174,6 +177,9 @@ func (c *Consumer) heartbeat(ctx context.Context) error {
 // Leave sends LeaveGroup on shutdown.
 func (c *Consumer) Leave(ctx context.Context) error {
 	c.stopHeartbeat()
+	if c.useNextGenGroup() {
+		return c.leave848(ctx)
+	}
 	if c.memberID == "" {
 		return nil
 	}

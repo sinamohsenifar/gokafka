@@ -33,6 +33,7 @@ type MetadataResponse struct {
 
 type TopicMeta struct {
 	Name       string
+	TopicID    wire.UUID
 	Partitions []PartitionMeta
 	ErrorCode  int16
 }
@@ -48,10 +49,10 @@ func DecodeMetadataResponse(version int16, body []byte) (MetadataResponse, error
 	if version <= 8 {
 		return decodeMetadataResponseLegacy(body)
 	}
-	return decodeMetadataResponseFlex(body)
+	return decodeMetadataResponseFlex(version, body)
 }
 
-func decodeMetadataResponseFlex(body []byte) (MetadataResponse, error) {
+func decodeMetadataResponseFlex(version int16, body []byte) (MetadataResponse, error) {
 	buf := wire.FromBytes(body)
 	if _, err := buf.ReadInt32(); err != nil {
 		return MetadataResponse{}, err
@@ -104,6 +105,12 @@ func decodeMetadataResponseFlex(body []byte) (MetadataResponse, error) {
 		if err != nil {
 			return MetadataResponse{}, err
 		}
+		var topicID wire.UUID
+		if version >= 10 {
+			if topicID, err = buf.ReadUUID(); err != nil {
+				return MetadataResponse{}, err
+			}
+		}
 		isInternal, err := buf.ReadBool()
 		_ = isInternal
 		if err != nil {
@@ -113,7 +120,7 @@ func decodeMetadataResponseFlex(body []byte) (MetadataResponse, error) {
 		if err != nil {
 			return MetadataResponse{}, err
 		}
-		tm := TopicMeta{Name: name, ErrorCode: errCode}
+		tm := TopicMeta{Name: name, TopicID: topicID, ErrorCode: errCode}
 		for j := 1; j < int(nParts); j++ {
 			pErr, err := buf.ReadInt16()
 			if err != nil {

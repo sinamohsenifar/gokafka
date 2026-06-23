@@ -260,6 +260,9 @@ func (c *Consumer) commitOffsets(ctx context.Context, records []Record, attempt 
 }
 
 func (c *Consumer) joinAndAssign(ctx context.Context) error {
+	if c.useNextGenGroup() {
+		return c.joinAndAssign848(ctx)
+	}
 	if err := c.client.cluster.Refresh(ctx, c.topics); err != nil {
 		return err
 	}

@@ -23,7 +23,7 @@ func Compress(codec int8, in []byte) ([]byte, error) {
 	case CodecLZ4:
 		return LZ4Encode(in)
 	case CodecZstd:
-		return nil, fmt.Errorf("compress: zstd not yet supported (stdlib-only); use gzip or snappy")
+		return ZstdEncode(in)
 	default:
 		return nil, fmt.Errorf("compress: unknown codec %d", codec)
 	}
@@ -41,7 +41,7 @@ func Decompress(codec int8, in []byte) ([]byte, error) {
 	case CodecLZ4:
 		return LZ4Decode(in)
 	case CodecZstd:
-		return nil, fmt.Errorf("compress: zstd not yet supported")
+		return ZstdDecode(in)
 	default:
 		return nil, fmt.Errorf("compress: unknown codec %d", codec)
 	}

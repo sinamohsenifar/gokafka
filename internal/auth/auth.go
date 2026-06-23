@@ -57,12 +57,19 @@ type SASLConfig struct {
 	Kerberos KerberosConfig
 }
 
+// GSSAPITokenProvider exchanges SPNEGO tokens with an external Kerberos stack (kinit, krb5, AD).
+type GSSAPITokenProvider func(ctx context.Context, challenge []byte) ([]byte, error)
+
 // KerberosConfig holds GSSAPI/Kerberos SASL settings.
 type KerberosConfig struct {
 	Principal string // e.g. kafka/client@REALM
-	Keytab    string // path to keytab file
+	Keytab    string // path to keytab file (reserved; use TokenProvider)
 	Realm     string
 	Service   string // krb5 service name, default "kafka"
+	// InitToken is an optional first SPNEGO token (e.g. from kinit).
+	InitToken []byte
+	// TokenProvider handles multi-round SPNEGO when the broker returns a challenge.
+	TokenProvider GSSAPITokenProvider
 }
 
 func (c Config) SASLEnabled() bool {
