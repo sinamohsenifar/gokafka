@@ -17,7 +17,7 @@ func integrationWaitTopicReady() {
 	time.Sleep(300 * time.Millisecond)
 }
 
-func integrationWaitPartitions(t *testing.T, admin *gokafka.Admin, topic string, want int32) {
+func integrationWaitPartitions(t *testing.T, admin *gokafka.Admin, topic string, want int) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
