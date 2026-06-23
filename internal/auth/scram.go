@@ -11,6 +11,7 @@ import (
 	"hash"
 	"strings"
 
+	"github.com/sinamohsenifar/gokafka/internal/limits"
 	"github.com/sinamohsenifar/gokafka/internal/protocol"
 	"github.com/sinamohsenifar/gokafka/internal/wire"
 )
@@ -41,6 +42,12 @@ func scramExchange(ctx context.Context, conn requester, sec Config, newHash func
 	}
 	iterations := 4096
 	fmt.Sscanf(fields["i"], "%d", &iterations)
+	if iterations < 1 {
+		iterations = 4096
+	}
+	if iterations > limits.MaxSCRAMIterations {
+		return fmt.Errorf("auth: SCRAM iteration count %d exceeds limit %d", iterations, limits.MaxSCRAMIterations)
+	}
 
 	salted := pbkdf2(newHash, sec.SASL.Password, salt, iterations)
 	clientKey := hmacSum(newHash, salted, []byte("Client Key"))

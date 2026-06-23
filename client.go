@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/sinamohsenifar/gokafka/internal/broker"
+	"github.com/sinamohsenifar/gokafka/internal/limits"
 	"github.com/sinamohsenifar/gokafka/metrics"
 	"github.com/sinamohsenifar/gokafka/observe"
 	"github.com/sinamohsenifar/gokafka/schema"
@@ -27,6 +28,12 @@ func NewClient(cfg Config) (*Client, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
+	limits.Apply(limits.Config{
+		MaxResponseBytes:     cfg.Connection.Limits.MaxResponseBytes,
+		MaxDecompressedBytes: cfg.Connection.Limits.MaxDecompressedBytes,
+		MaxSCRAMIterations:   cfg.Connection.Limits.MaxSCRAMIterations,
+		MaxHTTPBodyBytes:     cfg.Connection.Limits.MaxHTTPBodyBytes,
+	})
 	obsCfg := cfg.Observability.Config
 	if obsCfg.Metrics.Namespace == "" {
 		obsCfg.Metrics.Namespace = cfg.Metrics.Namespace
@@ -44,11 +51,13 @@ func NewClient(cfg Config) (*Client, error) {
 		cfg:     cfg,
 		observe: hub,
 		cluster: broker.New(cfg.Brokers, cfg.ClientID, cfg.Security, broker.Options{
-			DialTimeout:    cfg.Connection.DialTimeout,
-			RequestTimeout: cfg.Connection.RequestTimeout,
-			HostRemap:      cfg.Connection.HostRemap,
-			AddressMapper:  cfg.Connection.BrokerAddressMapper,
-			Observe:        hub,
+			DialTimeout:       cfg.Connection.DialTimeout,
+			RequestTimeout:    cfg.Connection.RequestTimeout,
+			MetadataTTL:       cfg.Connection.MetadataTTL,
+			MaxResponseBytes:  limits.MaxResponseBytes,
+			HostRemap:         cfg.Connection.HostRemap,
+			AddressMapper:     cfg.Connection.BrokerAddressMapper,
+			Observe:           hub,
 		}),
 	}
 	ctx := context.Background()

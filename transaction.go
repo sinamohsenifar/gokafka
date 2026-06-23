@@ -102,7 +102,7 @@ func (t *TransactionalProducer) ProduceWithinTxnResult(ctx context.Context, reco
 	topics := uniqueTopics(records)
 	var results []ProduceRecordResult
 	err := retryRetriable(ctx, t.client.cfg.Retry, func() error {
-		if err := t.client.cluster.Refresh(ctx, topics); err != nil {
+		if err := t.client.cluster.RefreshIfStale(ctx, topics, false); err != nil {
 			return err
 		}
 		res, err := t.prod.sendRecords(ctx, records, recordSendOpts{

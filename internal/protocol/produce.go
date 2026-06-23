@@ -10,6 +10,8 @@ import (
 	"github.com/sinamohsenifar/gokafka/internal/wire"
 )
 
+var castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
+
 type ProduceRecord struct {
 	Topic     string
 	Partition int32
@@ -186,7 +188,7 @@ func encodeRecordBatch(records []ProduceRecord, settings ProduceSettings, baseSe
 	body := batch.Bytes()
 	batchLen := int32(len(body) - 12)
 	binary.BigEndian.PutUint32(body[8:12], uint32(batchLen))
-	crc := crc32.Checksum(body[21:], crc32.MakeTable(crc32.Castagnoli))
+	crc := crc32.Checksum(body[21:], castagnoliTable)
 	binary.BigEndian.PutUint32(body[17:21], crc)
 	return body, nil
 }

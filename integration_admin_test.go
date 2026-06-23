@@ -179,9 +179,6 @@ func TestIntegrationDeleteConsumerGroupOffsets(t *testing.T) {
 	defer cclient.Close()
 
 	consumer := cclient.Consumer([]string{topic})
-	if err := consumer.Rebalance(ctx); err != nil {
-		t.Fatal(err)
-	}
 	recs, err := consumer.Poll(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -189,7 +186,7 @@ func TestIntegrationDeleteConsumerGroupOffsets(t *testing.T) {
 	if len(recs) == 0 {
 		t.Fatal("expected a record to commit")
 	}
-	if err := consumer.Commit(ctx, recs...); err != nil {
+	if err := consumer.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if err := consumer.Leave(ctx); err != nil {

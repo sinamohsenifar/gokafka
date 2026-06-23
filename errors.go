@@ -32,6 +32,8 @@ const (
 	ErrCodeCoordinatorLoad          ErrorCode = 14
 	ErrCodeCoordinatorNotAvailable    ErrorCode = 15
 	ErrCodeNotCoordinator             ErrorCode = 16
+	ErrCodeNotEnoughReplicas          ErrorCode = 19
+	ErrCodeNotEnoughReplicasAfterAppend ErrorCode = 20
 	ErrCodeRebalanceInProg   ErrorCode = 27
 	ErrCodeInvalidTxnState      ErrorCode = 37
 	ErrCodeOutOfOrderSequence   ErrorCode = 45
@@ -56,7 +58,8 @@ func (e *KafkaError) Error() string {
 func (e *KafkaError) Retriable() bool {
 	switch e.Code {
 	case ErrCodeLeaderNotAvail, ErrCodeNotLeaderForPart, ErrCodeRequestTimedOut,
-		ErrCodeNetworkException, ErrCodeCoordinatorLoad, ErrCodeCoordinatorNotAvailable, ErrCodeNotCoordinator, ErrCodeRebalanceInProg,
+		ErrCodeNetworkException, ErrCodeCoordinatorLoad, ErrCodeCoordinatorNotAvailable, ErrCodeNotCoordinator,
+		ErrCodeNotEnoughReplicas, ErrCodeNotEnoughReplicasAfterAppend, ErrCodeRebalanceInProg,
 		ErrCodeInvalidProducerEpoch, ErrCodeOutOfOrderSequence:
 		return true
 	default:

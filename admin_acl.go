@@ -64,6 +64,9 @@ func (a *Admin) DescribeACLs(ctx context.Context, resourceType ACLResourceType, 
 
 // DeleteACLs removes ACL bindings matching the filter.
 func (a *Admin) DeleteACLs(ctx context.Context, resourceType ACLResourceType, name, principal string) (int, error) {
+	if name == "" && principal == "" {
+		return 0, fmt.Errorf("gokafka: DeleteACLs requires non-empty resource name or principal (use \"*\" to match all)")
+	}
 	ver := a.client.cluster.NegotiatedVersion(protocol.APIDeleteAcls, protocol.VerDeleteAcls)
 	if ver < 0 {
 		ver = protocol.VerDeleteAcls

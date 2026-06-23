@@ -1,6 +1,11 @@
 package compress
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/sinamohsenifar/gokafka/internal/limits"
+)
 
 var errSnappyCorrupt = errors.New("snappy: corrupt input")
 
@@ -23,6 +28,9 @@ func SnappyDecode(src []byte) ([]byte, error) {
 	uncompressed, n := decodeSnappyVarint(src)
 	if n <= 0 {
 		return nil, errSnappyCorrupt
+	}
+	if uncompressed > uint64(limits.MaxDecompressedBytes) {
+		return nil, fmt.Errorf("snappy: declared size %d exceeds limit %d", uncompressed, limits.MaxDecompressedBytes)
 	}
 	src = src[n:]
 	out := make([]byte, 0, int(uncompressed))

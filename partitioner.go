@@ -1,7 +1,5 @@
 package gokafka
 
-import "hash/fnv"
-
 // Partitioner selects a partition for a record key.
 type Partitioner interface {
 	Partition(key []byte, numPartitions int) int32
@@ -17,9 +15,21 @@ func (HashPartitioner) Partition(key []byte, n int) int32 {
 	if len(key) == 0 {
 		return 0
 	}
-	h := fnv.New32a()
-	_, _ = h.Write(key)
-	return int32(int(h.Sum32()) % n)
+	h := fnv1a32(key)
+	return int32(int(h) % n)
+}
+
+func fnv1a32(key []byte) uint32 {
+	const (
+		offset32 = 2166136261
+		prime32  = 16777619
+	)
+	h := uint32(offset32)
+	for _, b := range key {
+		h ^= uint32(b)
+		h *= prime32
+	}
+	return h
 }
 
 // RoundRobinPartitioner ignores keys and cycles partitions.

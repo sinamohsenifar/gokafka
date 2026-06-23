@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.12] - 2026-06-23
+
+### Security
+
+- **Resource limits** — cap Kafka response frames, decompressed batch size, SCRAM PBKDF2 iterations, and Schema Registry HTTP bodies
+- **Schema Registry** — URL-escape subject paths; truncate error response bodies in errors
+- **DeleteACLs** — reject empty name+principal filters (use `"*"` explicitly)
+
+### Fixed
+
+- **Multi-member consumer groups** — group leader runs range/roundrobin assignor before SyncGroup
+- **Offset commit** — partial `Commit(records...)` no longer advances uncommitted partitions; decode commit/heartbeat/sync errors
+- **Idempotent produce** — roll back all partition sequences on any multi-broker partial failure
+- **Offset commit responses** — version-aware encode/decode with flex fallback when brokers return compact responses on legacy request versions
+- **Consumer reliability** — cache coordinator; background heartbeat after join; mutex-protected consumer state; partial commit no longer advances uncommitted partitions
+- **Metadata** — TTL-based refresh (`ConnectionConfig.MetadataTTL`) instead of every produce call
+- **Performance** — reuse CRC32C table; inline FNV-1a partitioner (no per-record hasher alloc)
+
 ## [0.20.11] - 2026-06-23
 
 ### Fixed

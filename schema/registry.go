@@ -9,8 +9,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+
+	"github.com/sinamohsenifar/gokafka/internal/limits"
 )
 
 // Config configures Schema Registry HTTP access.
@@ -93,7 +96,8 @@ func (r *Registry) RegisterProtobuf(ctx context.Context, subject, schema string)
 func (r *Registry) register(ctx context.Context, subject, schemaType, schema string) (int, error) {
 	body := map[string]any{"schemaType": schemaType, "schema": schema}
 	var resp schemaResponse
-	if err := r.post(ctx, "/subjects/"+subject+"/versions", body, &resp); err != nil {
+	path := "/subjects/" + escapeSubjectPath(subject) + "/versions"
+	if err := r.post(ctx, path, body, &resp); err != nil {
 		return 0, err
 	}
 	return resp.ID, nil
@@ -140,15 +144,27 @@ func (r *Registry) do(req *http.Request, out any) error {
 		return err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	limited := io.LimitReader(resp.Body, int64(limits.MaxHTTPBodyBytes)+1)
+	data, err := io.ReadAll(limited)
 	if err != nil {
 		return err
 	}
+	if len(data) > limits.MaxHTTPBodyBytes {
+		return fmt.Errorf("schema: response body exceeds limit %d", limits.MaxHTTPBodyBytes)
+	}
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("schema: HTTP %d: %s", resp.StatusCode, string(data))
+		snippet := string(data)
+		if len(snippet) > 512 {
+			snippet = snippet[:512] + "..."
+		}
+		return fmt.Errorf("schema: HTTP %d: %s", resp.StatusCode, snippet)
 	}
 	if out == nil {
 		return nil
 	}
 	return json.Unmarshal(data, out)
+}
+
+func escapeSubjectPath(subject string) string {
+	return url.PathEscape(subject)
 }

@@ -10,26 +10,31 @@ import (
 	"time"
 
 	"github.com/sinamohsenifar/gokafka/internal/auth"
+	"github.com/sinamohsenifar/gokafka/internal/limits"
 	"github.com/sinamohsenifar/gokafka/internal/protocol"
 )
 
 // Conn is a Kafka broker connection with optional SASL/TLS.
 type Conn struct {
-	addr            string
-	netConn         net.Conn
-	reader          *bufio.Reader
-	clientID        string
-	correlationID   int32
-	security        auth.Config
-	requestTimeout  time.Duration
+	addr              string
+	netConn           net.Conn
+	reader            *bufio.Reader
+	clientID          string
+	correlationID     int32
+	security          auth.Config
+	requestTimeout    time.Duration
+	maxResponseBytes  int
 }
 
-func Dial(ctx context.Context, addr, clientID string, sec auth.Config, dialTimeout, requestTimeout time.Duration) (*Conn, error) {
+func Dial(ctx context.Context, addr, clientID string, sec auth.Config, dialTimeout, requestTimeout time.Duration, maxResponseBytes int) (*Conn, error) {
 	if dialTimeout <= 0 {
 		dialTimeout = 10 * time.Second
 	}
 	if requestTimeout <= 0 {
 		requestTimeout = 30 * time.Second
+	}
+	if maxResponseBytes <= 0 {
+		maxResponseBytes = limits.MaxResponseBytes
 	}
 	d := net.Dialer{Timeout: dialTimeout}
 	nc, err := auth.Dial(ctx, d, addr, sec)
@@ -37,12 +42,13 @@ func Dial(ctx context.Context, addr, clientID string, sec auth.Config, dialTimeo
 		return nil, err
 	}
 	c := &Conn{
-		addr:           addr,
-		netConn:        nc,
-		reader:         bufio.NewReader(nc),
-		clientID:       clientID,
-		security:       sec,
-		requestTimeout: requestTimeout,
+		addr:             addr,
+		netConn:          nc,
+		reader:           bufio.NewReader(nc),
+		clientID:         clientID,
+		security:         sec,
+		requestTimeout:   requestTimeout,
+		maxResponseBytes: maxResponseBytes,
 	}
 	if sec.SASLEnabled() {
 		if err := auth.Handshake(ctx, c, sec); err != nil {
@@ -98,6 +104,9 @@ func (c *Conn) Request(ctx context.Context, apiKey, apiVersion int16, body []byt
 		return nil, fmt.Errorf("transport: read size: %w", err)
 	}
 	size := int(sizeBuf[0])<<24 | int(sizeBuf[1])<<16 | int(sizeBuf[2])<<8 | int(sizeBuf[3])
+	if size < 0 || size > c.maxResponseBytes {
+		return nil, fmt.Errorf("transport: response size %d exceeds limit %d", size, c.maxResponseBytes)
+	}
 	resp := make([]byte, 4+size)
 	copy(resp, sizeBuf)
 	if _, err := io.ReadFull(c.reader, resp[4:]); err != nil {

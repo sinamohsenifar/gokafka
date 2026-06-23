@@ -49,12 +49,15 @@ func (p *Producer) ProduceSyncResult(ctx context.Context, records ...Record) ([]
 
 	var results []ProduceRecordResult
 	err := retryRetriable(ctx, p.client.cfg.Retry, func() error {
-		if err := p.client.cluster.Refresh(ctx, topics); err != nil {
+		if err := p.client.cluster.RefreshIfStale(ctx, topics, false); err != nil {
 			span.RecordError(err)
 			return err
 		}
 		res, err := p.sendOnce(ctx, records)
 		if err != nil {
+			if IsRetriable(err) {
+				_ = p.client.cluster.Refresh(ctx, topics)
+			}
 			if p.shouldResetProducerID(err) {
 				p.resetProducerID()
 				if err2 := p.ensureProducerID(ctx); err2 != nil {
@@ -176,12 +179,14 @@ type partKey struct {
 }
 
 func (p *Producer) sendOnce(ctx context.Context, records []Record) ([]ProduceRecordResult, error) {
+	p.pidMu.Lock()
 	var pid *protocol.ProducerID
 	var idState *produce.State
 	if p.pidReady {
 		pid = &p.pid
 		idState = p.idState
 	}
+	p.pidMu.Unlock()
 	return p.sendRecords(ctx, records, recordSendOpts{pid: pid, idState: idState})
 }
 
@@ -253,23 +258,23 @@ func (p *Producer) sendRecords(ctx context.Context, records []Record, opts recor
 
 		body, err := protocol.EncodeProduceRequest(batch, settings)
 		if err != nil {
-			rollbackPartitions(brokerBatches)
+			rollbackPartitions(partBatches)
 			return nil, err
 		}
 		rb, err := p.client.cluster.Request(ctx, node, protocol.APIProduce, protocol.VerProduce, body)
 		if err != nil {
-			rollbackPartitions(brokerBatches)
+			rollbackPartitions(partBatches)
 			p.client.observe.Metrics.OnProduce(0, err)
 			return nil, err
 		}
 		brokerResults, err := protocol.DecodeProduceResponse(rb)
 		if err != nil {
-			rollbackPartitions(brokerBatches)
+			rollbackPartitions(partBatches)
 			return nil, err
 		}
 		for _, res := range brokerResults {
 			if res.ErrorCode != 0 {
-				rollbackPartitions(brokerBatches)
+				rollbackPartitions(partBatches)
 				ke := newKafkaError(res.ErrorCode, res.Topic, res.Partition, "produce failed")
 				p.client.observe.Metrics.OnProduce(0, ke)
 				return nil, ke

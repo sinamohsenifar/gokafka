@@ -3,7 +3,10 @@ package compress
 import (
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
+
+	"github.com/sinamohsenifar/gokafka/internal/limits"
 )
 
 // Gzip compresses data using stdlib gzip (Kafka compression type 1).
@@ -26,5 +29,13 @@ func Gunzip(in []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer r.Close()
-	return io.ReadAll(r)
+	limited := io.LimitReader(r, int64(limits.MaxDecompressedBytes)+1)
+	out, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) > limits.MaxDecompressedBytes {
+		return nil, fmt.Errorf("compress: gzip decompressed size exceeds limit %d", limits.MaxDecompressedBytes)
+	}
+	return out, nil
 }

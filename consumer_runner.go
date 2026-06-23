@@ -16,10 +16,7 @@ func (c *Consumer) Run(ctx context.Context, h Handler) error {
 	if err := c.client.requireOpen(); err != nil {
 		return err
 	}
-
-	hbCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go c.heartbeatLoop(hbCtx)
+	defer c.stopHeartbeat()
 
 loop:
 	for {
@@ -147,20 +144,36 @@ func (c *Consumer) heartbeatLoop(ctx context.Context) {
 }
 
 func (c *Consumer) heartbeat(ctx context.Context) error {
-	if c.memberID == "" {
+	c.mu.Lock()
+	memberID := c.memberID
+	generation := c.generation
+	group := c.group
+	c.mu.Unlock()
+	if memberID == "" {
 		return nil
 	}
 	coord, err := c.coordinator(ctx)
 	if err != nil {
 		return err
 	}
-	body := protocol.EncodeHeartbeatRequest(c.group, c.memberID, c.generation)
-	_, err = c.client.cluster.Request(ctx, coord, protocol.APIHeartbeat, protocol.VerHeartbeat, body)
-	return err
+	body := protocol.EncodeHeartbeatRequest(group, memberID, generation)
+	rb, err := c.client.cluster.Request(ctx, coord, protocol.APIHeartbeat, protocol.VerHeartbeat, body)
+	if err != nil {
+		return err
+	}
+	code, err := protocol.DecodeHeartbeatResponse(rb)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return newKafkaError(code, "", 0, "heartbeat failed")
+	}
+	return nil
 }
 
 // Leave sends LeaveGroup on shutdown.
 func (c *Consumer) Leave(ctx context.Context) error {
+	c.stopHeartbeat()
 	if c.memberID == "" {
 		return nil
 	}

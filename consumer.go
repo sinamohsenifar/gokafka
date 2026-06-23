@@ -3,6 +3,7 @@ package gokafka
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/sinamohsenifar/gokafka/internal/protocol"
@@ -11,14 +12,18 @@ import (
 
 // Consumer reads from topics using a consumer group.
 type Consumer struct {
+	mu          sync.Mutex
 	client      *Client
 	topics      []string
 	group       string
 	memberID    string
 	generation  int32
+	coordID     int32
+	hasCoord    bool
 	assignments []partitionOffset
 	listener    RebalanceListener
 	paused      map[partKey]struct{}
+	hbCancel    context.CancelFunc
 }
 
 type partitionOffset struct {
@@ -35,7 +40,9 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 	if c.client.cfg.ConsumerGroup == "" {
 		return nil, ErrNoConsumerGroup
 	}
+	c.mu.Lock()
 	c.group = c.client.cfg.ConsumerGroup
+	c.mu.Unlock()
 
 	if len(c.assignments) == 0 {
 		if err := c.joinAndAssign(ctx); err != nil {
@@ -51,7 +58,10 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 	}
 
 	byNode := map[int32][]protocol.FetchPartition{}
-	for _, a := range c.assignments {
+	c.mu.Lock()
+	assignments := append([]partitionOffset(nil), c.assignments...)
+	c.mu.Unlock()
+	for _, a := range assignments {
 		if c.isPaused(a.topic, a.partition) {
 			continue
 		}
@@ -108,6 +118,8 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 }
 
 func (c *Consumer) bumpOffset(topic string, part int32, off int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for i := range c.assignments {
 		if c.assignments[i].topic == topic && c.assignments[i].partition == part {
 			c.assignments[i].offset = off
@@ -118,22 +130,30 @@ func (c *Consumer) bumpOffset(topic string, part int32, off int64) {
 
 // Commit commits consumed offsets to the consumer group coordinator.
 func (c *Consumer) Commit(ctx context.Context, records ...Record) error {
+	return c.commitOffsets(ctx, records, 0)
+}
+
+func (c *Consumer) commitOffsets(ctx context.Context, records []Record, attempt int) error {
+	const maxCommitAttempts = 20
 	if err := c.client.requireOpen(); err != nil {
 		return err
 	}
 	offsets := map[string]map[int32]int64{}
-	for _, r := range records {
-		if offsets[r.Topic] == nil {
-			offsets[r.Topic] = map[int32]int64{}
-		}
-		offsets[r.Topic][r.Partition] = r.Offset + 1
-	}
-	for _, a := range c.assignments {
-		if offsets[a.topic] == nil {
-			offsets[a.topic] = map[int32]int64{}
-		}
-		if _, ok := offsets[a.topic][a.partition]; !ok {
+	if len(records) == 0 {
+		c.mu.Lock()
+		for _, a := range c.assignments {
+			if offsets[a.topic] == nil {
+				offsets[a.topic] = map[int32]int64{}
+			}
 			offsets[a.topic][a.partition] = a.offset
+		}
+		c.mu.Unlock()
+	} else {
+		for _, r := range records {
+			if offsets[r.Topic] == nil {
+				offsets[r.Topic] = map[int32]int64{}
+			}
+			offsets[r.Topic][r.Partition] = r.Offset + 1
 		}
 	}
 
@@ -141,9 +161,43 @@ func (c *Consumer) Commit(ctx context.Context, records ...Record) error {
 	if err != nil {
 		return err
 	}
-	body := protocol.EncodeOffsetCommitRequest(c.group, c.memberID, c.client.cfg.Consumer.GroupInstanceID, c.generation, offsets)
-	_, err = c.client.cluster.Request(ctx, coord, protocol.APIOffsetCommit, protocol.VerOffsetCommit, body)
-	return err
+	c.mu.Lock()
+	group := c.group
+	memberID := c.memberID
+	generation := c.generation
+	instanceID := c.client.cfg.Consumer.GroupInstanceID
+	c.mu.Unlock()
+
+	ver := c.client.cluster.NegotiatedVersion(protocol.APIOffsetCommit, protocol.VerOffsetCommit)
+	body := protocol.EncodeOffsetCommitRequest(ver, group, memberID, instanceID, generation, offsets)
+	rb, err := c.client.cluster.Request(ctx, coord, protocol.APIOffsetCommit, ver, body)
+	if err != nil {
+		return err
+	}
+	code, err := protocol.DecodeOffsetCommitResponse(ver, rb)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		if code == int16(ErrCodeRebalanceInProg) && attempt+1 < maxCommitAttempts {
+			time.Sleep(500 * time.Millisecond)
+			return c.commitOffsets(ctx, records, attempt+1)
+		}
+		if c.shouldRejoin(newKafkaError(code, "", 0, "offset commit failed")) {
+			if attempt+1 < maxCommitAttempts {
+				time.Sleep(200 * time.Millisecond)
+				if err := c.rejoin(ctx); err != nil {
+					return err
+				}
+				return c.commitOffsets(ctx, records, attempt+1)
+			}
+		}
+		if protocol.CoordinatorRetriable(code) {
+			c.invalidateCoordinator()
+		}
+		return newKafkaError(code, "", 0, "offset commit failed")
+	}
+	return nil
 }
 
 func (c *Consumer) joinAndAssign(ctx context.Context) error {
@@ -166,8 +220,10 @@ func (c *Consumer) joinAndAssign(ctx context.Context) error {
 	}
 
 	var joined protocol.JoinGroupResponse
+	var assignmentBytes []byte
 joinLoop:
 	for attempt := 0; attempt < 20; attempt++ {
+	joinInner:
 		for {
 			joinBody := protocol.EncodeJoinGroupRequest(
 				c.group, c.memberID, assignor, c.client.cfg.Consumer.GroupInstanceID,
@@ -184,6 +240,7 @@ joinLoop:
 			}
 			if code, ok := protocol.APIErrorCode(err); ok && protocol.CoordinatorRetriable(code) {
 				c.client.cluster.Invalidate(coord)
+				c.invalidateCoordinator()
 				coord, err = c.coordinator(ctx)
 				if err != nil {
 					return err
@@ -193,35 +250,78 @@ joinLoop:
 			if err != nil {
 				return err
 			}
-			break joinLoop
+			break joinInner
 		}
-	}
-	c.memberID = joined.MemberID
-	c.generation = joined.GenerationID
 
-	assignments := map[string][]byte{joined.MemberID: {}}
-	syncBody := protocol.EncodeSyncGroupRequest(c.group, joined.MemberID, joined.Protocol, joined.GenerationID, assignments)
-	rb, err := c.client.cluster.Request(ctx, coord, protocol.APISyncGroup, protocol.VerSyncGroup, syncBody)
-	if err != nil {
-		return err
-	}
-	assignmentBytes, err := protocol.DecodeSyncGroupResponse(rb)
-	if err != nil {
-		return err
+		c.memberID = joined.MemberID
+		c.generation = joined.GenerationID
+
+		syncAssignments := map[string][]byte{joined.MemberID: {}}
+		if joined.MemberID == joined.LeaderID {
+			var members []protocol.MemberSubscription
+			for mid, meta := range joined.Assignments {
+				topics, err := protocol.DecodeConsumerSubscription(meta)
+				if err != nil {
+					return err
+				}
+				members = append(members, protocol.MemberSubscription{MemberID: mid, Topics: topics})
+			}
+			if len(members) > 0 {
+				meta := c.client.cluster.Metadata()
+				topicParts := map[string][]int32{}
+				for _, t := range meta.Topics {
+					parts := make([]int32, 0, len(t.Partitions))
+					for _, p := range t.Partitions {
+						parts = append(parts, p.Partition)
+					}
+					topicParts[t.Name] = parts
+				}
+				syncAssignments = protocol.ComputeGroupAssignments(joined.Protocol, members, topicParts)
+			}
+		}
+
+		syncBody := protocol.EncodeSyncGroupRequest(c.group, joined.MemberID, joined.Protocol, joined.GenerationID, syncAssignments)
+		rb, err := c.client.cluster.Request(ctx, coord, protocol.APISyncGroup, protocol.VerSyncGroup, syncBody)
+		if err != nil {
+			return err
+		}
+		assignmentBytes, err = protocol.DecodeSyncGroupResponse(rb)
+		if err != nil {
+			if c.shouldRejoin(err) {
+				c.invalidateCoordinator()
+				coord, err = c.coordinator(ctx)
+				if err != nil {
+					return err
+				}
+				continue joinLoop
+			}
+			return err
+		}
+		break joinLoop
 	}
 
 	if err := c.applyAssignment(ctx, assignmentBytes, coord); err != nil {
 		return err
 	}
+	c.mu.Lock()
+	c.coordID = coord
+	c.hasCoord = true
+	c.mu.Unlock()
 	if err := c.loadCommittedOffsets(ctx, coord); err != nil {
 		return err
 	}
-	c.notifyAssigned(ctx)
+	c.mu.Lock()
+	c.notifyAssignedLocked(ctx)
+	c.mu.Unlock()
+	c.ensureHeartbeat()
+	_ = c.heartbeat(ctx)
 	return nil
 }
 
 func (c *Consumer) applyAssignment(ctx context.Context, raw []byte, _ int32) error {
-	c.notifyRevoked(ctx)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.notifyRevokedLocked(ctx)
 	parsed, err := protocol.ParseMemberAssignment(raw)
 	if err != nil {
 		return err
@@ -299,8 +399,84 @@ func (c *Consumer) loadCommittedOffsets(ctx context.Context, coord int32) error 
 	return nil
 }
 
+func (c *Consumer) ensureHeartbeat() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.hbCancel != nil {
+		return
+	}
+	hbCtx, cancel := context.WithCancel(context.Background())
+	c.hbCancel = cancel
+	go c.heartbeatLoop(hbCtx)
+}
+
+func (c *Consumer) stopHeartbeat() {
+	c.mu.Lock()
+	cancel := c.hbCancel
+	c.hbCancel = nil
+	c.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
 func (c *Consumer) coordinator(ctx context.Context) (int32, error) {
-	return c.client.cluster.FindCoordinator(ctx, c.group, protocol.CoordinatorGroup)
+	c.mu.Lock()
+	if c.hasCoord {
+		id := c.coordID
+		c.mu.Unlock()
+		return id, nil
+	}
+	group := c.group
+	if group == "" {
+		group = c.client.cfg.ConsumerGroup
+	}
+	c.mu.Unlock()
+
+	id, err := c.client.cluster.FindCoordinator(ctx, group, protocol.CoordinatorGroup)
+	if err != nil {
+		return 0, err
+	}
+	c.mu.Lock()
+	c.coordID = id
+	c.hasCoord = true
+	c.mu.Unlock()
+	return id, nil
+}
+
+func (c *Consumer) invalidateCoordinator() {
+	c.mu.Lock()
+	c.hasCoord = false
+	c.mu.Unlock()
+}
+
+func (c *Consumer) shouldRejoin(err error) bool {
+	code, ok := protocol.APIErrorCode(err)
+	if !ok {
+		var ke *KafkaError
+		if errors.As(err, &ke) {
+			code = int16(ke.Code)
+			ok = true
+		}
+	}
+	if !ok {
+		return false
+	}
+	switch code {
+	case int16(ErrCodeRebalanceInProg), int16(ErrCodeNotCoordinator),
+		25, 22: // UNKNOWN_MEMBER_ID, ILLEGAL_GENERATION
+		return true
+	default:
+		return protocol.CoordinatorRetriable(code)
+	}
+}
+
+func (c *Consumer) rejoin(ctx context.Context) error {
+	c.mu.Lock()
+	c.assignments = nil
+	c.hasCoord = false
+	c.mu.Unlock()
+	return c.joinAndAssign(ctx)
 }
 
 func (c *Consumer) isCooperative() bool {

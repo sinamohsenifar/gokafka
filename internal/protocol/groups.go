@@ -299,8 +299,12 @@ func decodeSyncGroupResponseLegacy(body []byte) ([]byte, error) {
 	if _, err := buf.ReadInt32(); err != nil {
 		return nil, err
 	}
-	if _, err := buf.ReadInt16(); err != nil {
+	errCode, err := buf.ReadInt16()
+	if err != nil {
 		return nil, err
+	}
+	if errCode != 0 {
+		return nil, apiError("sync group", errCode)
 	}
 	return buf.ReadBytes()
 }
@@ -310,8 +314,12 @@ func decodeSyncGroupResponseFlex(body []byte) ([]byte, error) {
 	if _, err := buf.ReadInt32(); err != nil {
 		return nil, err
 	}
-	if _, err := buf.ReadInt16(); err != nil {
+	errCode, err := buf.ReadInt16()
+	if err != nil {
 		return nil, err
+	}
+	if errCode != 0 {
+		return nil, apiError("sync group", errCode)
 	}
 	assignment, err := buf.ReadCompactBytes()
 	if err != nil {
@@ -339,6 +347,24 @@ func EncodeHeartbeatRequest(group, memberID string, generation int32) []byte {
 	return buf.Bytes()
 }
 
+// DecodeHeartbeatResponse reads the top-level error code from Heartbeat.
+func DecodeHeartbeatResponse(body []byte) (int16, error) {
+	buf := wire.FromBytes(body)
+	if _, err := buf.ReadInt32(); err != nil {
+		return 0, err
+	}
+	code, err := buf.ReadInt16()
+	if err != nil {
+		return 0, err
+	}
+	if VerHeartbeat >= 4 {
+		if err := buf.SkipTagSection(); err != nil {
+			return 0, err
+		}
+	}
+	return code, nil
+}
+
 func EncodeLeaveGroupRequest(group, memberID string) []byte {
 	if VerLeaveGroup >= 4 {
 		buf := wire.NewBuffer(16)
@@ -355,8 +381,10 @@ func EncodeLeaveGroupRequest(group, memberID string) []byte {
 	return buf.Bytes()
 }
 
-func EncodeOffsetCommitRequest(group, memberID, groupInstanceID string, generation int32, offsets map[string]map[int32]int64) []byte {
-	ver := VerOffsetCommit
+func EncodeOffsetCommitRequest(ver int16, group, memberID, groupInstanceID string, generation int32, offsets map[string]map[int32]int64) []byte {
+	if ver <= 0 {
+		ver = VerOffsetCommit
+	}
 	if ver >= 8 {
 		return encodeOffsetCommitRequestFlex(ver, group, memberID, groupInstanceID, generation, offsets)
 	}
@@ -476,6 +504,101 @@ func encodeCreateTopicsRequestFlex(topics map[string]TopicCreate) []byte {
 	buf.WriteBool(false)
 	buf.WriteEmptyTagSection()
 	return buf.Bytes()
+}
+
+// DecodeOffsetCommitResponse returns the first non-zero partition error code, if any.
+func DecodeOffsetCommitResponse(ver int16, body []byte) (int16, error) {
+	if ver >= 8 {
+		return decodeOffsetCommitResponseFlex(body)
+	}
+	code, err := decodeOffsetCommitResponseLegacy(ver, body)
+	if err != nil {
+		return 0, err
+	}
+	if code == 0 {
+		return 0, nil
+	}
+	if alt, err2 := decodeOffsetCommitResponseFlex(body); err2 == nil {
+		return alt, nil
+	}
+	return code, nil
+}
+
+func decodeOffsetCommitResponseLegacy(ver int16, body []byte) (int16, error) {
+	buf := wire.FromBytes(body)
+	if ver >= 3 {
+		if _, err := buf.ReadInt32(); err != nil { // throttle
+			return 0, err
+		}
+	}
+	nTopics, err := buf.ReadInt32()
+	if err != nil {
+		return 0, err
+	}
+	for i := int32(0); i < nTopics; i++ {
+		if _, err := buf.ReadString(); err != nil {
+			return 0, err
+		}
+		nParts, err := buf.ReadInt32()
+		if err != nil {
+			return 0, err
+		}
+		for j := int32(0); j < nParts; j++ {
+			if _, err := buf.ReadInt32(); err != nil {
+				return 0, err
+			}
+			code, err := buf.ReadInt16()
+			if err != nil {
+				return 0, err
+			}
+			if code != 0 {
+				return code, nil
+			}
+		}
+	}
+	return 0, nil
+}
+
+func decodeOffsetCommitResponseFlex(body []byte) (int16, error) {
+	buf := wire.FromBytes(body)
+	if _, err := buf.ReadInt32(); err != nil {
+		return 0, err
+	}
+	nTopics, err := buf.ReadUvarint()
+	if err != nil {
+		return 0, err
+	}
+	for i := 1; i < int(nTopics); i++ {
+		if _, err := buf.ReadCompactString(); err != nil {
+			return 0, err
+		}
+		nParts, err := buf.ReadUvarint()
+		if err != nil {
+			return 0, err
+		}
+		for j := 1; j < int(nParts); j++ {
+			if _, err := buf.ReadInt32(); err != nil {
+				return 0, err
+			}
+			code, err := buf.ReadInt16()
+			if err != nil {
+				return 0, err
+			}
+			if code != 0 {
+				return code, nil
+			}
+			if err := buf.SkipTagSection(); err != nil {
+				return 0, err
+			}
+		}
+		if err := buf.SkipTagSection(); err != nil {
+			return 0, err
+		}
+	}
+	if err := buf.SkipTagSection(); err != nil {
+		return 0, err
+	}
+	return 0, nil
 }
 
 type TopicCreate struct {

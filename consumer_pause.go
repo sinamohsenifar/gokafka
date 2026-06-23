@@ -5,6 +5,8 @@ func (c *Consumer) Pause(partitions ...TopicPartition) {
 	if len(partitions) == 0 {
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.paused == nil {
 		c.paused = map[partKey]struct{}{}
 	}
@@ -15,6 +17,8 @@ func (c *Consumer) Pause(partitions ...TopicPartition) {
 
 // Resume restarts fetching from previously paused partitions.
 func (c *Consumer) Resume(partitions ...TopicPartition) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if len(c.paused) == 0 {
 		return
 	}
@@ -32,6 +36,8 @@ func (c *Consumer) Resume(partitions ...TopicPartition) {
 
 // PausedPartitions returns currently paused partitions.
 func (c *Consumer) PausedPartitions() []TopicPartition {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if len(c.paused) == 0 {
 		return nil
 	}
@@ -46,6 +52,8 @@ func (c *Consumer) PausedPartitions() []TopicPartition {
 }
 
 func (c *Consumer) isPaused(topic string, part int32) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if len(c.paused) == 0 {
 		return false
 	}

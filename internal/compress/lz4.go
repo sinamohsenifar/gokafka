@@ -3,6 +3,9 @@ package compress
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
+
+	"github.com/sinamohsenifar/gokafka/internal/limits"
 )
 
 var errLZ4 = errors.New("lz4: corrupt or unsupported block")
@@ -24,6 +27,9 @@ func LZ4Decode(src []byte) ([]byte, error) {
 	}
 	compLen := int(binary.BigEndian.Uint32(src[0:4]))
 	uncompLen := int(binary.BigEndian.Uint32(src[4:8]))
+	if uncompLen > limits.MaxDecompressedBytes {
+		return nil, fmt.Errorf("lz4: declared size %d exceeds limit %d", uncompLen, limits.MaxDecompressedBytes)
+	}
 	if len(src) < 8+compLen {
 		return nil, errLZ4
 	}

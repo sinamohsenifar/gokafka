@@ -36,20 +36,32 @@ func (c *Consumer) SetRebalanceListener(l RebalanceListener) {
 }
 
 func (c *Consumer) notifyRevoked(ctx context.Context) {
-	if c.listener == nil || len(c.assignments) == 0 {
-		return
-	}
-	c.listener.OnPartitionsRevoked(ctx, c.assignedPartitions())
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.notifyRevokedLocked(ctx)
 }
 
 func (c *Consumer) notifyAssigned(ctx context.Context) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.notifyAssignedLocked(ctx)
+}
+
+func (c *Consumer) notifyRevokedLocked(ctx context.Context) {
+	if c.listener == nil || len(c.assignments) == 0 {
+		return
+	}
+	c.listener.OnPartitionsRevoked(ctx, c.assignedPartitionsLocked())
+}
+
+func (c *Consumer) notifyAssignedLocked(ctx context.Context) {
 	if c.listener == nil {
 		return
 	}
-	c.listener.OnPartitionsAssigned(ctx, c.assignedPartitions())
+	c.listener.OnPartitionsAssigned(ctx, c.assignedPartitionsLocked())
 }
 
-func (c *Consumer) assignedPartitions() []TopicPartition {
+func (c *Consumer) assignedPartitionsLocked() []TopicPartition {
 	out := make([]TopicPartition, len(c.assignments))
 	for i, a := range c.assignments {
 		out[i] = TopicPartition{Topic: a.topic, Partition: a.partition, Offset: a.offset}
@@ -66,16 +78,21 @@ func (c *Consumer) Rebalance(ctx context.Context) error {
 	if c.client.cfg.ConsumerGroup == "" {
 		return ErrNoConsumerGroup
 	}
+	c.mu.Lock()
 	c.group = c.client.cfg.ConsumerGroup
-	c.notifyRevoked(ctx)
+	c.notifyRevokedLocked(ctx)
+	c.mu.Unlock()
 	if c.isCooperative() {
 		return c.joinAndAssign(ctx)
 	}
 	if err := c.Leave(ctx); err != nil {
 		return err
 	}
+	c.mu.Lock()
 	c.assignments = nil
 	c.memberID = ""
 	c.generation = 0
+	c.hasCoord = false
+	c.mu.Unlock()
 	return c.joinAndAssign(ctx)
 }

@@ -14,11 +14,13 @@ import (
 
 // Options configures cluster networking behavior.
 type Options struct {
-	DialTimeout    time.Duration
-	RequestTimeout time.Duration
-	HostRemap      map[string]string
-	AddressMapper  func(nodeID int32, host string, port int32) string
-	Observe        *observe.Hub
+	DialTimeout       time.Duration
+	RequestTimeout    time.Duration
+	MetadataTTL       time.Duration
+	MaxResponseBytes  int
+	HostRemap         map[string]string
+	AddressMapper     func(nodeID int32, host string, port int32) string
+	Observe           *observe.Hub
 }
 
 func (o Options) resolveAddress(nodeID int32, host string, port int32) string {
@@ -43,10 +45,11 @@ type Cluster struct {
 	Security auth.Config
 	Opts     Options
 
-	mu          sync.RWMutex
-	meta        protocol.MetadataResponse
-	leaderIndex map[string]map[int32]int32 // topic -> partition -> broker node id
-	conns       map[int32]*transport.Conn
+	mu              sync.RWMutex
+	meta            protocol.MetadataResponse
+	leaderIndex     map[string]map[int32]int32 // topic -> partition -> broker node id
+	metaRefreshedAt time.Time
+	conns           map[int32]*transport.Conn
 	seedConn    *transport.Conn
 	apiVersions map[int16]int16
 }
@@ -89,6 +92,33 @@ func (c *Cluster) Invalidate(nodeID int32) {
 }
 
 func (c *Cluster) Refresh(ctx context.Context, topics []string) error {
+	if err := c.refresh(ctx, topics); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.metaRefreshedAt = time.Now()
+	c.mu.Unlock()
+	return nil
+}
+
+// RefreshIfStale reloads metadata when the TTL expired or force is true.
+func (c *Cluster) RefreshIfStale(ctx context.Context, topics []string, force bool) error {
+	ttl := c.Opts.MetadataTTL
+	if ttl <= 0 {
+		ttl = 30 * time.Second
+	}
+	if !force {
+		c.mu.RLock()
+		fresh := !c.metaRefreshedAt.IsZero() && time.Since(c.metaRefreshedAt) < ttl
+		c.mu.RUnlock()
+		if fresh {
+			return nil
+		}
+	}
+	return c.Refresh(ctx, topics)
+}
+
+func (c *Cluster) refresh(ctx context.Context, topics []string) error {
 	conn, err := c.seed(ctx)
 	if err != nil {
 		return err
@@ -180,7 +210,7 @@ func (c *Cluster) Conn(ctx context.Context, nodeID int32) (*transport.Conn, erro
 		return nil, fmt.Errorf("broker: unknown node %d", nodeID)
 	}
 	addr := c.Opts.resolveAddress(broker.NodeID, broker.Host, broker.Port)
-	conn, err := transport.Dial(ctx, addr, c.ClientID, c.Security, c.Opts.DialTimeout, c.Opts.RequestTimeout)
+	conn, err := transport.Dial(ctx, addr, c.ClientID, c.Security, c.Opts.DialTimeout, c.Opts.RequestTimeout, c.Opts.MaxResponseBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +247,7 @@ func (c *Cluster) seed(ctx context.Context) (*transport.Conn, error) {
 	c.mu.RUnlock()
 	var lastErr error
 	for _, s := range c.Seeds {
-		conn, err := transport.Dial(ctx, s, c.ClientID, c.Security, c.Opts.DialTimeout, c.Opts.RequestTimeout)
+		conn, err := transport.Dial(ctx, s, c.ClientID, c.Security, c.Opts.DialTimeout, c.Opts.RequestTimeout, c.Opts.MaxResponseBytes)
 		if err != nil {
 			lastErr = err
 			continue
