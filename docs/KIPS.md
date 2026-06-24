@@ -45,7 +45,7 @@ Compression is applied only when compressed size is smaller than uncompressed (b
 | KIP-394 | `MEMBER_ID_REQUIRED` join retry | ✅ | Consumer integration (implicit) |
 | KIP-345 | Static membership (`group.instance.id`) | ✅ | `TestIntegrationStaticMembership` |
 | KIP-429 | Cooperative sticky assignor | ✅ | `TestIntegrationCooperativeStickyRebalance` |
-| KIP-848 | Consumer group protocol (next-gen) | 🔶 | `TestIntegrationConsumerGroup848` (broker must enable new protocol) |
+| KIP-848 | Consumer group protocol (next-gen) | ✅ | `TestIntegrationConsumerGroup848` |
 
 ## Admin & metadata
 
@@ -79,12 +79,11 @@ Compression is applied only when compressed size is smaller than uncompressed (b
 | Abort transaction | ✅ | `TestIntegrationTransactionAbort` |
 | read_committed consume | ✅ | Transaction integration suite |
 
-## Share groups & future
+## Share groups
 
-| KIP | Feature | Status |
-|-----|---------|--------|
-| KIP-932 | Share consumer groups | 🔶 | `TestIntegrationShareConsumer` (Kafka 4.0+) |
-| KIP-848 | New consumer protocol | 🔶 Experimental (`GroupProtocolNextGen`) |
+| KIP | Feature | Status | Tests |
+|-----|---------|--------|-------|
+| KIP-932 | Share consumer groups | ✅ | `TestIntegrationShareConsumer` (Kafka 4.1+ with `share.version=1`) |
 
 ## Best practices enforced in GoKafka
 

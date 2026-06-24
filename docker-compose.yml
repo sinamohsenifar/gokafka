@@ -14,7 +14,7 @@
 
 services:
   kafka:
-    image: ${KAFKA_IMAGE:-apache/kafka:3.9.2}
+    image: ${KAFKA_IMAGE:-apache/kafka:4.1.2}
     hostname: kafka
     ports:
       - "9092:9092"
@@ -81,7 +81,7 @@ services:
       start_period: 40s
 
   kafka-init:
-    image: ${KAFKA_IMAGE:-apache/kafka:3.9.2}
+    image: ${KAFKA_IMAGE:-apache/kafka:4.1.2}
     depends_on:
       kafka:
         condition: service_healthy

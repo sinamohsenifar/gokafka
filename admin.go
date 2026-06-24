@@ -111,6 +111,26 @@ type GroupMemberSummary struct {
 	ClientHost string
 }
 
+// ShareGroupMemberSummary describes a share group member.
+type ShareGroupMemberSummary struct {
+	MemberID             string
+	MemberEpoch          int32
+	ClientID             string
+	ClientHost           string
+	SubscribedTopicNames []string
+}
+
+// ShareGroupDescription is detailed share group metadata from ShareGroupDescribe.
+type ShareGroupDescription struct {
+	GroupID         string
+	State           string
+	GroupEpoch      int32
+	AssignmentEpoch int32
+	AssignorName    string
+	Members         []ShareGroupMemberSummary
+	ErrorCode       ErrorCode
+}
+
 // ConsumerGroupDescription is detailed group metadata from DescribeGroups.
 type ConsumerGroupDescription struct {
 	GroupID      string
@@ -169,6 +189,43 @@ func (a *Admin) DescribeConsumerGroups(ctx context.Context, groups ...string) ([
 		for _, m := range g.Members {
 			desc.Members = append(desc.Members, GroupMemberSummary{
 				MemberID: m.MemberID, ClientID: m.ClientID, ClientHost: m.ClientHost,
+			})
+		}
+		out[i] = desc
+	}
+	return out, nil
+}
+
+// DescribeShareGroups returns state and members for KIP-932 share groups (Kafka 4.1+).
+func (a *Admin) DescribeShareGroups(ctx context.Context, groups ...string) ([]ShareGroupDescription, error) {
+	if len(groups) == 0 {
+		return nil, nil
+	}
+	ver := a.client.cluster.NegotiatedVersion(protocol.APIShareGroupDescribe, protocol.VerShareGroupDescribe)
+	if ver <= 0 {
+		return nil, fmt.Errorf("gokafka: broker does not support ShareGroupDescribe")
+	}
+	body := protocol.EncodeShareGroupDescribeRequest(groups, false)
+	rb, err := a.requestAny(ctx, protocol.APIShareGroupDescribe, ver, body)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := protocol.DecodeShareGroupDescribeResponse(rb)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ShareGroupDescription, len(raw))
+	for i, g := range raw {
+		desc := ShareGroupDescription{
+			GroupID: g.GroupID, State: g.GroupState, GroupEpoch: g.GroupEpoch,
+			AssignmentEpoch: g.AssignmentEpoch, AssignorName: g.AssignorName,
+			ErrorCode: ErrorCode(g.ErrorCode),
+		}
+		for _, m := range g.Members {
+			desc.Members = append(desc.Members, ShareGroupMemberSummary{
+				MemberID: m.MemberID, MemberEpoch: m.MemberEpoch,
+				ClientID: m.ClientID, ClientHost: m.ClientHost,
+				SubscribedTopicNames: append([]string(nil), m.SubscribedTopicNames...),
 			})
 		}
 		out[i] = desc

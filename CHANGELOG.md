@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-06-24
+
+### Added
+
+- **ShareGroupDescribe (API 77)** — `Admin.DescribeShareGroups` for KIP-932 share group introspection
+- **ShareFetch v2** — `ShareAcquireMode`, `IsRenewAck`, and `ShareAckRenew` acknowledgement type when broker negotiates v2
+- Integration CI defaults to **Kafka 4.1.2** with `share.version=1` enabled in `kafka-init`
+
+### Fixed
+
+- **KIP-848 heartbeat decode** — removed double `ResponseBody` strip that corrupted `ConsumerGroupHeartbeat` responses
+- **KIP-848 / share join** — poll heartbeats until partition assignment arrives (not first empty response)
+- **Share fetch sessions** — reset epoch and retry on `SHARE_SESSION_NOT_FOUND` / `INVALID_SHARE_SESSION_EPOCH`
+- **`ownedTopicPartitions848`** — no longer holds consumer mutex during metadata lookups
+
+### Changed
+
+- KIP-848 (`GroupProtocolNextGen`) and KIP-932 (`ShareConsumer`) promoted from experimental to **stable**
+- Docker Compose default image: `apache/kafka:4.1.2`
+- Config rejects setting both `ConsumerGroup` and `ShareGroup` on the same client
+
 ## [0.23.0] - 2026-06-24
 
 ### Added

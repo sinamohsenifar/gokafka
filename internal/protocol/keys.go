@@ -62,6 +62,7 @@ const (
 	VerSaslAuthenticate int16 = 1
 	VerConsumerGroupHeartbeat int16 = 1
 	VerShareGroupHeartbeat    int16 = 1
-	VerShareFetch             int16 = 1
+	VerShareGroupDescribe     int16 = 1
+	VerShareFetch             int16 = 2
 	VerShareAcknowledge       int16 = 1
 )

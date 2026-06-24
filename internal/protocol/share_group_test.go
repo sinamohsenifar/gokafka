@@ -19,7 +19,7 @@ func TestEncodeShareGroupHeartbeatRequest(t *testing.T) {
 }
 
 func TestEncodeShareFetchRequest(t *testing.T) {
-	body := protocol.EncodeShareFetchRequest(protocol.ShareFetchRequest{
+	body := protocol.EncodeShareFetchRequest(protocol.VerShareFetch, protocol.ShareFetchRequest{
 		GroupID: "g", MemberID: "m", ShareSessionEpoch: 0,
 		MaxWaitMs: 500, MinBytes: 1, MaxBytes: 1 << 20, MaxRecords: 100, BatchSize: 1,
 	})

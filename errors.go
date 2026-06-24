@@ -37,6 +37,8 @@ const (
 	ErrCodeOutOfOrderSequence   ErrorCode = 45
 	ErrCodeInvalidProducerEpoch ErrorCode = 47
 	ErrCodeInvalidTxnState      ErrorCode = 48
+	ErrCodeShareSessionNotFound ErrorCode = 122
+	ErrCodeInvalidShareSessionEpoch ErrorCode = 123
 )
 
 // KafkaError wraps a broker error code with context.
@@ -59,7 +61,8 @@ func (e *KafkaError) Retriable() bool {
 	case ErrCodeLeaderNotAvail, ErrCodeNotLeaderForPart, ErrCodeRequestTimedOut,
 		ErrCodeNetworkException, ErrCodeCoordinatorLoad, ErrCodeCoordinatorNotAvailable, ErrCodeNotCoordinator,
 		ErrCodeNotEnoughReplicas, ErrCodeNotEnoughReplicasAfterAppend, ErrCodeRebalanceInProg,
-		ErrCodeInvalidProducerEpoch, ErrCodeOutOfOrderSequence:
+		ErrCodeInvalidProducerEpoch, ErrCodeOutOfOrderSequence,
+		ErrCodeShareSessionNotFound, ErrCodeInvalidShareSessionEpoch:
 		return true
 	default:
 		return false

@@ -73,6 +73,8 @@ func ClientVersion(apiKey int16) int16 {
 		return VerConsumerGroupHeartbeat
 	case APIShareGroupHeartbeat:
 		return VerShareGroupHeartbeat
+	case APIShareGroupDescribe:
+		return VerShareGroupDescribe
 	case APIShareFetch:
 		return VerShareFetch
 	case APIShareAcknowledge:

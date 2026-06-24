@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sinamohsenifar/gokafka"
+	"github.com/sinamohsenifar/gokafka/internal/protocol"
 )
 
 func TestIntegrationConsumerGroup848(t *testing.T) {
@@ -23,7 +24,21 @@ func TestIntegrationConsumerGroup848(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := gokafka.NewClient(setup)
+	probe, err := gokafka.NewClient(setup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := probe.NegotiatedAPIVersion(protocol.APIConsumerGroupHeartbeat); !ok || v == 0 {
+		probe.Close()
+		t.Skip("broker does not support KIP-848 ConsumerGroupHeartbeat")
+	}
+	probe.Close()
+
+	adminCfg, err := gokafka.NewConfig(brokers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := gokafka.NewClient(adminCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +67,7 @@ func TestIntegrationConsumerGroup848(t *testing.T) {
 
 	consumer := c.Consumer([]string{topic})
 	if err := consumer.Rebalance(ctx); err != nil {
-		t.Skipf("KIP-848 not enabled on broker (set group.coordinator.rebalance.protocol=consumer): %v", err)
+		t.Fatalf("KIP-848 rebalance: %v", err)
 	}
 	parts := consumer.AssignedPartitions()
 	if len(parts) == 0 {

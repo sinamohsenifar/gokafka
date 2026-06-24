@@ -82,11 +82,19 @@ func (s *ShareConsumer) Poll(ctx context.Context) ([]Record, error) {
 	for broker, parts := range byBroker {
 		recs, err := s.fetchShare(ctx, broker, group, memberID, parts, maxPoll-len(out))
 		if err != nil {
-			if code, ok := protocol.APIErrorCode(err); ok && (code == 6 || code == 5) {
-				_ = s.client.cluster.Refresh(ctx, s.topics)
-				continue
+			if code, ok := protocol.APIErrorCode(err); ok {
+				switch code {
+				case 5, 6: // NOT_LEADER / LEADER_NOT_AVAILABLE
+					_ = s.client.cluster.Refresh(ctx, s.topics)
+					continue
+				case 122, 123: // SHARE_SESSION_NOT_FOUND / INVALID_SHARE_SESSION_EPOCH
+					s.resetShareSession(broker)
+					recs, err = s.fetchShare(ctx, broker, group, memberID, parts, maxPoll-len(out))
+				}
 			}
-			return nil, err
+			if err != nil {
+				return nil, err
+			}
 		}
 		out = append(out, recs...)
 		if len(out) >= maxPoll {
@@ -112,7 +120,8 @@ func (s *ShareConsumer) joinShareGroup(ctx context.Context) error {
 	memberID := s.memberID
 	s.mu.Unlock()
 
-	for attempt := 0; attempt < 20; attempt++ {
+	var gotAssignment bool
+	for attempt := 0; attempt < 30; attempt++ {
 		s.mu.Lock()
 		epoch := s.memberEpoch
 		s.mu.Unlock()
@@ -169,11 +178,23 @@ func (s *ShareConsumer) joinShareGroup(ctx context.Context) error {
 			if err := s.applyShareAssignment(resp.Assignment); err != nil {
 				return err
 			}
+			gotAssignment = true
+			break
 		}
-		s.ensureShareHeartbeat()
-		return s.shareHeartbeat(ctx)
+		if resp.MemberEpoch <= 0 {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
 	}
-	return fmt.Errorf("gokafka: share group join timed out")
+	if !gotAssignment {
+		return fmt.Errorf("gokafka: share group join: no partition assignment")
+	}
+	s.ensureShareHeartbeat()
+	return s.shareHeartbeat(ctx)
 }
 
 func (s *ShareConsumer) applyShareAssignment(assign []protocol.TopicIDPartitions) error {
@@ -213,12 +234,13 @@ func (s *ShareConsumer) fetchShare(ctx context.Context, broker int32, group, mem
 			TopicID: p.topicID, Partition: p.partition,
 		}
 	}
-	body := protocol.EncodeShareFetchRequest(protocol.ShareFetchRequest{
+	ver := s.client.cluster.NegotiatedVersion(protocol.APIShareFetch, protocol.VerShareFetch)
+	body := protocol.EncodeShareFetchRequest(ver, protocol.ShareFetchRequest{
 		GroupID: group, MemberID: memberID, ShareSessionEpoch: epoch,
 		MaxWaitMs: 500, MinBytes: 1, MaxBytes: 50 << 20, MaxRecords: int32(maxRecords), BatchSize: 1,
 		Partitions: fetchParts,
 	})
-	rb, err := s.client.cluster.Request(ctx, broker, protocol.APIShareFetch, protocol.VerShareFetch, body)
+	rb, err := s.client.cluster.Request(ctx, broker, protocol.APIShareFetch, ver, body)
 	if err != nil {
 		return nil, err
 	}
@@ -366,6 +388,12 @@ func (s *ShareConsumer) coordinator(ctx context.Context) (int32, error) {
 func (s *ShareConsumer) invalidateCoordinator() {
 	s.mu.Lock()
 	s.hasCoord = false
+	s.mu.Unlock()
+}
+
+func (s *ShareConsumer) resetShareSession(broker int32) {
+	s.mu.Lock()
+	s.shareSession[broker] = 0
 	s.mu.Unlock()
 }
 

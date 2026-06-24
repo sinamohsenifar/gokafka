@@ -87,6 +87,9 @@ func (c Config) validate() error {
 			return fmt.Errorf("gokafka: HeartbeatInterval must be less than SessionTimeout")
 		}
 	}
+	if c.ConsumerGroup != "" && c.ShareGroup != "" {
+		return fmt.Errorf("gokafka: ConsumerGroup and ShareGroup are mutually exclusive")
+	}
 	return nil
 }
 

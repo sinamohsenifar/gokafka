@@ -14,9 +14,8 @@ Per [Apache Kafka downloads](https://kafka.apache.org/community/downloads/):
 
 | Release | Docker image | CI |
 |---------|--------------|-----|
-| **3.9.2** | `apache/kafka:3.9.2` | Primary integration (every PR) |
-| **4.0.2** | `apache/kafka:4.0.2` | Compatibility matrix |
-| **4.1.2** | `apache/kafka:4.1.2` | Scheduled matrix |
+| **3.9.2** | `apache/kafka:3.9.2` | Compatibility matrix |
+| **4.1.2** | `apache/kafka:4.1.2` | Primary integration (every PR) |
 | **4.2.1** | `apache/kafka:4.2.1` | Scheduled matrix |
 | **4.3.0** | `apache/kafka:4.3.0` | Compatibility matrix (every PR) |
 
@@ -38,4 +37,6 @@ Per [Apache Kafka downloads](https://kafka.apache.org/community/downloads/):
 
 - ZooKeeper-mode brokers on Kafka 4.x (brokers removed ZK)
 - Pre-2.1 Kafka protocol clients (not applicable — GoKafka is a native implementation)
-- KIP-848 / KIP-932 share consumer groups (roadmap)
+
+**KIP-848** requires `group.coordinator.rebalance.protocol=consumer` on the broker (set in docker-compose).  
+**KIP-932** requires Kafka 4.1+ with `share.version=1` (`kafka-features.sh upgrade --feature share.version=1`; enabled automatically in `kafka-init`).

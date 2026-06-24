@@ -190,7 +190,7 @@ type GroupProtocol int
 
 const (
 	GroupProtocolClassic GroupProtocol = iota
-	GroupProtocolNextGen                 // KIP-848 experimental
+	GroupProtocolNextGen                 // KIP-848 ConsumerGroupHeartbeat
 )
 
 // ConsumerConfig controls group consumption.

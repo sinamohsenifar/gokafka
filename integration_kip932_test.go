@@ -27,7 +27,7 @@ func TestIntegrationShareConsumer(t *testing.T) {
 	}
 	if v, ok := probe.NegotiatedAPIVersion(protocol.APIShareGroupHeartbeat); !ok || v == 0 {
 		probe.Close()
-		t.Skip("broker does not support KIP-932 ShareGroupHeartbeat (Kafka 4.0+)")
+		t.Skip("broker does not support KIP-932 ShareGroupHeartbeat (Kafka 4.1+ with share.version=1)")
 	}
 	probe.Close()
 
@@ -65,7 +65,7 @@ func TestIntegrationShareConsumer(t *testing.T) {
 	defer c.Close()
 
 	prod := c.Producer()
-	if _, err := prod.ProduceSync(ctx, gokafka.Record{Topic: topic, Value: []byte("share-msg")}); err != nil {
+	if err := prod.ProduceSync(ctx, gokafka.Record{Topic: topic, Value: []byte("share-msg")}); err != nil {
 		t.Fatal(err)
 	}
 

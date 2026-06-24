@@ -33,6 +33,8 @@ jobs:
             -storepass "$(tr -d '\n' < docker/secrets/kafka_keystore_creds)" >/dev/null
 
       - name: Start Kafka stack
+        env:
+          KAFKA_IMAGE: apache/kafka:4.1.2
         run: |
           set -euxo pipefail
           docker compose pull kafka

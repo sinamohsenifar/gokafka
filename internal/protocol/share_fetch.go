@@ -14,6 +14,7 @@ const (
 	ShareAckAccept  ShareAckType = 1
 	ShareAckRelease ShareAckType = 2
 	ShareAckReject  ShareAckType = 3
+	ShareAckRenew   ShareAckType = 4
 )
 
 // ShareAckBatch acknowledges a contiguous offset range.
@@ -30,7 +31,7 @@ type ShareFetchPartition struct {
 	AckBatches []ShareAckBatch
 }
 
-// ShareFetchRequest is KIP-932 ShareFetch (API 78 v1).
+// ShareFetchRequest is KIP-932 ShareFetch (API 78 v1+).
 type ShareFetchRequest struct {
 	GroupID           string
 	MemberID          string
@@ -40,6 +41,8 @@ type ShareFetchRequest struct {
 	MaxBytes          int32
 	MaxRecords        int32
 	BatchSize         int32
+	ShareAcquireMode  int8 // v2+: 0=batch-optimized, 1=record-limit
+	IsRenewAck        bool // v2+: Renew ack batches present
 	Partitions        []ShareFetchPartition
 }
 
@@ -51,8 +54,8 @@ type ShareFetchResponse struct {
 	Records                  []FetchedRecord
 }
 
-// EncodeShareFetchRequest encodes API 78 flex v1.
-func EncodeShareFetchRequest(req ShareFetchRequest) []byte {
+// EncodeShareFetchRequest encodes API 78 flex v1+.
+func EncodeShareFetchRequest(apiVersion int16, req ShareFetchRequest) []byte {
 	buf := wire.NewBuffer(512)
 	buf.WriteCompactString(req.GroupID)
 	buf.WriteCompactString(req.MemberID)
@@ -62,6 +65,10 @@ func EncodeShareFetchRequest(req ShareFetchRequest) []byte {
 	buf.WriteInt32(req.MaxBytes)
 	buf.WriteInt32(req.MaxRecords)
 	buf.WriteInt32(req.BatchSize)
+	if apiVersion >= 2 {
+		buf.WriteInt8(req.ShareAcquireMode)
+		buf.WriteBool(req.IsRenewAck)
+	}
 
 	byTopic := map[wire.UUID][]ShareFetchPartition{}
 	order := make([]wire.UUID, 0)

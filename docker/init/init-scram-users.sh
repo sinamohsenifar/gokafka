@@ -29,3 +29,8 @@ echo "Creating SCRAM credentials for user $USER..."
   --entity-type users --entity-name "$USER"
 
 echo "SCRAM users ready."
+
+if [ -x /opt/kafka/bin/kafka-features.sh ]; then
+  echo "Enabling share groups (share.version=1) when supported..."
+  /opt/kafka/bin/kafka-features.sh --bootstrap-server "$BOOTSTRAP" upgrade --feature share.version=1 || true
+fi

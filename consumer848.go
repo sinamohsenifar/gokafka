@@ -67,7 +67,8 @@ func (c *Consumer) joinAndAssign848(ctx context.Context) error {
 	if id := c.client.cfg.Consumer.GroupInstanceID; id != "" {
 		instanceID = &id
 	}
-	for attempt := 0; attempt < 20; attempt++ {
+	var gotAssignment bool
+	for attempt := 0; attempt < 30; attempt++ {
 		c.mu.Lock()
 		memberEpoch := c.generation
 		c.mu.Unlock()
@@ -144,11 +145,23 @@ func (c *Consumer) joinAndAssign848(ctx context.Context) error {
 				c.notifyAssignedLocked(ctx)
 				c.mu.Unlock()
 			}
+			gotAssignment = true
+			break
 		}
-		c.ensureHeartbeat()
-		return c.heartbeat848(ctx)
+		if resp.MemberEpoch <= 0 {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
 	}
-	return fmt.Errorf("gokafka: consumer group heartbeat join timed out")
+	if !gotAssignment {
+		return fmt.Errorf("gokafka: consumer group heartbeat join: no partition assignment")
+	}
+	c.ensureHeartbeat()
+	return c.heartbeat848(ctx)
 }
 
 func (c *Consumer) sendGroupHeartbeat848(ctx context.Context, coord int32, req protocol.ConsumerGroupHeartbeatRequest) (protocol.ConsumerGroupHeartbeatResponse, error) {
@@ -157,13 +170,9 @@ func (c *Consumer) sendGroupHeartbeat848(ctx context.Context, coord int32, req p
 	if err != nil {
 		return protocol.ConsumerGroupHeartbeatResponse{}, err
 	}
-	respBody, err := protocol.ResponseBody(rb)
+	resp, err := protocol.DecodeConsumerGroupHeartbeatResponse(rb)
 	if err != nil {
-		return protocol.ConsumerGroupHeartbeatResponse{}, err
-	}
-	resp, err := protocol.DecodeConsumerGroupHeartbeatResponse(respBody)
-	if err != nil {
-		if legacy, legErr := protocol.DecodeConsumerGroupHeartbeatResponseLegacy(respBody); legErr == nil {
+		if legacy, legErr := protocol.DecodeConsumerGroupHeartbeatResponseLegacy(rb); legErr == nil {
 			return legacy, nil
 		}
 		return protocol.ConsumerGroupHeartbeatResponse{}, err
@@ -173,9 +182,10 @@ func (c *Consumer) sendGroupHeartbeat848(ctx context.Context, coord int32, req p
 
 func (c *Consumer) ownedTopicPartitions848() []protocol.TopicIDPartitions {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	assigns := append([]partitionOffset(nil), c.assignments...)
+	c.mu.Unlock()
 	byTopic := map[wire.UUID][]int32{}
-	for _, a := range c.assignments {
+	for _, a := range assigns {
 		id, ok := c.client.cluster.TopicIDByName(a.topic)
 		if !ok {
 			continue
