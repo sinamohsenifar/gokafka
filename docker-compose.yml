@@ -54,6 +54,9 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       # Enable KIP-848 integration tests on Kafka 3.7+ / 4.x (no-op on older brokers).
       KAFKA_GROUP_COORDINATOR_REBALANCE_PROTOCOL: consumer
+      # Single-broker dev: required for KIP-932 __share_group_state (default RF=3 needs 3 brokers).
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
       KAFKA_SUPER_USERS: User:admin;User:ANONYMOUS

@@ -13,17 +13,17 @@ import (
 
 // ShareConsumer reads from topics using a KIP-932 share group (queue semantics).
 type ShareConsumer struct {
-	mu               sync.Mutex
-	client           *Client
-	topics           []string
-	group            string
-	memberID         string
-	memberEpoch      int32
-	coordID          int32
-	hasCoord         bool
-	assignments      []shareAssignment
-	shareSession     map[int32]int32 // broker node -> session epoch
-	hbCancel         context.CancelFunc
+	mu           sync.Mutex
+	client       *Client
+	topics       []string
+	group        string
+	memberID     string
+	memberEpoch  int32
+	coordID      int32
+	hasCoord     bool
+	assignments  []shareAssignment
+	shareSession map[int32]int32 // broker node -> session epoch
+	hbCancel     context.CancelFunc
 }
 
 type shareAssignment struct {
@@ -121,7 +121,7 @@ func (s *ShareConsumer) joinShareGroup(ctx context.Context) error {
 	s.mu.Unlock()
 
 	var gotAssignment bool
-	for attempt := 0; attempt < 30; attempt++ {
+	for attempt := 0; attempt < 60; attempt++ {
 		s.mu.Lock()
 		epoch := s.memberEpoch
 		s.mu.Unlock()
@@ -181,13 +181,10 @@ func (s *ShareConsumer) joinShareGroup(ctx context.Context) error {
 			gotAssignment = true
 			break
 		}
-		if resp.MemberEpoch <= 0 {
-			continue
-		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(200 * time.Millisecond):
+		case <-time.After(500 * time.Millisecond):
 		}
 	}
 	if !gotAssignment {
@@ -315,8 +312,9 @@ func (s *ShareConsumer) Acknowledge(ctx context.Context, records ...Record) erro
 }
 
 func (s *ShareConsumer) sendShareHeartbeat(ctx context.Context, coord int32, req protocol.ShareGroupHeartbeatRequest) (protocol.ShareGroupHeartbeatResponse, error) {
+	ver := s.client.cluster.NegotiatedVersion(protocol.APIShareGroupHeartbeat, protocol.VerShareGroupHeartbeat)
 	body := protocol.EncodeShareGroupHeartbeatRequest(req)
-	rb, err := s.client.cluster.Request(ctx, coord, protocol.APIShareGroupHeartbeat, protocol.VerShareGroupHeartbeat, body)
+	rb, err := s.client.cluster.Request(ctx, coord, protocol.APIShareGroupHeartbeat, ver, body)
 	if err != nil {
 		return protocol.ShareGroupHeartbeatResponse{}, err
 	}

@@ -20,8 +20,16 @@ func TestNegotiateVersion(t *testing.T) {
 }
 
 func TestEncodeJoinGroupRequestV9(t *testing.T) {
-	body := protocol.EncodeJoinGroupRequest("g1", "m1", "range", "", []string{"t1"}, 45000, 45000, false)
+	body := protocol.EncodeJoinGroupRequest(protocol.VerJoinGroup, "g1", "m1", "range", "", []string{"t1"}, 45000, 45000, false)
 	if len(body) == 0 {
 		t.Fatal("empty join group body")
 	}
+}
+
+func TestEncodeJoinGroupRequestV6WireLayout(t *testing.T) {
+	body := protocol.EncodeJoinGroupRequest(6, "gokafka-it-test", "", "range", "", []string{"topic-a"}, 45000, 45000, false)
+	if len(body) < 20 {
+		t.Fatalf("too short: %d bytes %x", len(body), body)
+	}
+	t.Logf("join v6 body len=%d hex=%x", len(body), body)
 }

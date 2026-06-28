@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-06-29
+
+### Fixed
+
+- **Negotiated API versions threaded through the protocol layer** — `Fetch`, `JoinGroup`, `SyncGroup`, `Heartbeat`, `LeaveGroup`, `ConsumerGroupHeartbeat`, `AlterConfigs`, and `DeleteTopics` now encode/decode against the version negotiated with the broker at connect time instead of hardcoded `Ver*` ceilings. Prevents silent wire corruption when a broker negotiates a lower version than the client default.
+- **Fetch flex response decode** — read `last_stable_offset`, `log_start_offset`, aborted-transactions, `preferred_read_replica`, and per-topic/per-partition tag sections that were previously skipped, fixing record loss and parse errors on Fetch v12+.
+- **Fetch flex request** — emit `last_fetched_epoch` (v12+) and `log_start_offset` (v5+) conditionally, correct `session_epoch` (-1), and append `forgotten_topics_data` / `rack_id` / tag sections.
+- **AlterConfigs flex response** — corrected field order (`error_code`, `error_message`, `resource_type`, `resource_name`); previously misread the response and could report the wrong error code.
+- **JoinGroup flex request** — `protocol_type` is a non-nullable compact string (was encoded as nullable), which some brokers rejected.
+- **Metadata v10+ flex request** — encode topic `topic_id` as a UUID and `name` as a compact nullable string.
+- **Static group membership** — `group.instance.id` is now sent on `JoinGroup`, `SyncGroup`, `Heartbeat`, and `LeaveGroup`, enabling KIP-345 static membership.
+- **KIP-848 / KIP-932 heartbeat decode** — read the nullable `Assignment` struct via its presence byte and skip trailing tag sections in `ConsumerGroupHeartbeat` and `ShareGroupHeartbeat` responses.
+- **KIP-848 join** — send an empty (non-null) topic-partition list on first join (`memberEpoch == 0`) as the broker requires.
+
+### Changed
+
+- Version negotiation now runs **before** the first metadata refresh so the metadata request itself uses a negotiated version.
+- Raised default version ceilings: `SyncGroup` 3→5, `Heartbeat` 1→4, `LeaveGroup` 2→5.
+- `docker-compose.yml`: set `share.coordinator.state.topic` replication factor / min-ISR to 1 for single-broker KIP-932 dev.
+
 ## [0.24.1] - 2026-06-24
 
 ### Fixed

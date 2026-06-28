@@ -19,3 +19,11 @@ func TestEncodeMetadataRequestNamedTopics(t *testing.T) {
 		t.Fatalf("body too short: %d", len(body))
 	}
 }
+
+func TestEncodeMetadataRequestV12AllTopicsHex(t *testing.T) {
+	body := protocol.EncodeMetadataRequest(12, nil)
+	t.Logf("v12 all-topics metadata req len=%d hex=%x", len(body), body)
+	if len(body) < 4 {
+		t.Fatalf("too short: %d", len(body))
+	}
+}

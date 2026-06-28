@@ -35,8 +35,8 @@ type ConsumerGroupHeartbeatResponse struct {
 	Assignment          []TopicIDPartitions
 }
 
-// EncodeConsumerGroupHeartbeatRequest encodes API 68 (flex v1).
-func EncodeConsumerGroupHeartbeatRequest(req ConsumerGroupHeartbeatRequest) []byte {
+// EncodeConsumerGroupHeartbeatRequest encodes API 68 (flex v0/v1).
+func EncodeConsumerGroupHeartbeatRequest(ver int16, req ConsumerGroupHeartbeatRequest) []byte {
 	buf := wire.NewBuffer(256)
 	buf.WriteCompactString(req.GroupID)
 	buf.WriteCompactString(req.MemberID)
@@ -45,7 +45,9 @@ func EncodeConsumerGroupHeartbeatRequest(req ConsumerGroupHeartbeatRequest) []by
 	buf.WriteCompactNullableString(req.RackID)
 	buf.WriteInt32(req.RebalanceTimeoutMs)
 	writeCompactNullableStringArray(buf, req.SubscribedTopicNames)
-	buf.WriteCompactNullableString(req.SubscribedTopicRegex)
+	if ver >= 1 {
+		buf.WriteCompactNullableString(req.SubscribedTopicRegex)
+	}
 	buf.WriteCompactNullableString(req.ServerAssignor)
 	writeCompactNullableTopicIDPartitions(buf, req.TopicPartitions)
 	buf.WriteEmptyTagSection()
@@ -75,6 +77,7 @@ func writeCompactNullableTopicIDPartitions(buf *wire.Buffer, parts []TopicIDPart
 		for _, p := range tp.Partitions {
 			buf.WriteInt32(p)
 		}
+		buf.WriteEmptyTagSection()
 	}
 }
 
@@ -101,11 +104,11 @@ func DecodeConsumerGroupHeartbeatResponse(body []byte) (ConsumerGroupHeartbeatRe
 	if out.HeartbeatIntervalMs, err = buf.ReadInt32(); err != nil {
 		return out, err
 	}
-	assignMark, err := buf.ReadUvarint()
+	presence, err := buf.ReadInt8()
 	if err != nil {
 		return out, err
 	}
-	if assignMark != 0 {
+	if presence >= 0 {
 		nTP, err := buf.ReadUvarint()
 		if err != nil {
 			return out, err
@@ -116,6 +119,9 @@ func DecodeConsumerGroupHeartbeatResponse(body []byte) (ConsumerGroupHeartbeatRe
 				return out, err
 			}
 			out.Assignment = append(out.Assignment, tp)
+		}
+		if err := buf.SkipTagSection(); err != nil {
+			return out, err
 		}
 	}
 	if err := buf.SkipTagSection(); err != nil {
@@ -143,6 +149,9 @@ func readTopicIDPartitions(buf *wire.Buffer) (TopicIDPartitions, error) {
 			return tp, err
 		}
 		tp.Partitions = append(tp.Partitions, p)
+	}
+	if err := buf.SkipTagSection(); err != nil {
+		return tp, err
 	}
 	return tp, nil
 }

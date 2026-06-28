@@ -236,9 +236,9 @@ func encodeMetadataRequestFlex(version int16, topics []string) []byte {
 		buf.WriteCompactArrayLen(len(topics))
 		for _, t := range topics {
 			if version >= 10 {
-				buf.WriteInt64(0)
-				buf.WriteInt64(0)
-				buf.WriteCompactString(t)
+				var zero wire.UUID
+				buf.WriteUUID(zero)
+				buf.WriteCompactNullableString(&t)
 			} else {
 				buf.WriteCompactString(t)
 			}

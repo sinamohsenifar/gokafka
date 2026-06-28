@@ -13,28 +13,14 @@ type MemberSubscription struct {
 }
 
 // DecodeConsumerSubscription parses consumer metadata from JoinGroup member bytes.
-func DecodeConsumerSubscription(raw []byte) ([]string, error) {
+// The payload is always legacy ConsumerProtocolSubscription (flexibleVersions=none).
+func DecodeConsumerSubscription(_ int16, raw []byte) ([]string, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
 	buf := wire.FromBytes(raw)
 	if _, err := buf.ReadInt16(); err != nil { // subscription version
 		return nil, err
-	}
-	if VerJoinGroup >= 6 {
-		n, err := buf.ReadUvarint()
-		if err != nil {
-			return nil, err
-		}
-		topics := make([]string, 0, int(n)-1)
-		for i := 1; i < int(n); i++ {
-			t, err := buf.ReadCompactString()
-			if err != nil {
-				return nil, err
-			}
-			topics = append(topics, t)
-		}
-		return topics, nil
 	}
 	nTopics, err := buf.ReadInt32()
 	if err != nil {

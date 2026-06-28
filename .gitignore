@@ -38,3 +38,7 @@ docker/secrets/*_creds
 # Coverage
 coverage.out
 coverage.html
+
+# Local Kafka source/release archives (reference downloads, not part of the module)
+*.tar.gz
+*.tgz

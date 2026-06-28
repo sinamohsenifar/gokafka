@@ -91,9 +91,11 @@ func EncodeShareFetchRequest(apiVersion int16, req ShareFetchRequest) []byte {
 				buf.WriteInt64(ab.LastOffset)
 				buf.WriteCompactArrayLen(1)
 				buf.WriteInt8(int8(ab.Type))
+				buf.WriteEmptyTagSection()
 			}
 			buf.WriteEmptyTagSection()
 		}
+		buf.WriteEmptyTagSection()
 	}
 	buf.WriteCompactArrayLen(0) // forgotten_topics_data
 	buf.WriteEmptyTagSection()

@@ -103,10 +103,10 @@ func (c *Consumer) processRecords(ctx context.Context, recs []Record, h Handler)
 
 func (c *Consumer) processRecordsParallel(ctx context.Context, recs []Record, h Handler) ([]Record, error) {
 	var (
-		wg        sync.WaitGroup
-		mu        sync.Mutex
-		processed []Record
-		errOnce   sync.Once
+		wg         sync.WaitGroup
+		mu         sync.Mutex
+		processed  []Record
+		errOnce    sync.Once
 		handlerErr error
 	)
 	wg.Add(len(recs))
@@ -167,12 +167,14 @@ func (c *Consumer) heartbeat(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	body := protocol.EncodeHeartbeatRequest(group, memberID, generation)
-	rb, err := c.client.cluster.Request(ctx, coord, protocol.APIHeartbeat, protocol.VerHeartbeat, body)
+	hbVer := c.client.cluster.NegotiatedVersion(protocol.APIHeartbeat, protocol.VerHeartbeat)
+	instanceID := c.client.cfg.Consumer.GroupInstanceID
+	body := protocol.EncodeHeartbeatRequest(hbVer, group, memberID, instanceID, generation)
+	rb, err := c.client.cluster.Request(ctx, coord, protocol.APIHeartbeat, hbVer, body)
 	if err != nil {
 		return err
 	}
-	code, err := protocol.DecodeHeartbeatResponse(rb)
+	code, err := protocol.DecodeHeartbeatResponse(hbVer, rb)
 	if err != nil {
 		return err
 	}
@@ -199,7 +201,8 @@ func (c *Consumer) Leave(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	buf := protocol.EncodeLeaveGroupRequest(group, memberID)
-	_, err = c.client.cluster.Request(ctx, coord, protocol.APILeaveGroup, protocol.VerLeaveGroup, buf)
+	leaveVer := c.client.cluster.NegotiatedVersion(protocol.APILeaveGroup, protocol.VerLeaveGroup)
+	buf := protocol.EncodeLeaveGroupRequest(leaveVer, group, memberID, c.client.cfg.Consumer.GroupInstanceID)
+	_, err = c.client.cluster.Request(ctx, coord, protocol.APILeaveGroup, leaveVer, buf)
 	return err
 }

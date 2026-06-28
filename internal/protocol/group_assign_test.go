@@ -72,8 +72,8 @@ func TestComputeGroupAssignmentsSticky(t *testing.T) {
 }
 
 func TestDecodeConsumerSubscriptionLegacy(t *testing.T) {
-	raw := EncodeConsumerSubscription([]string{"a", "b"}, false)
-	topics, err := DecodeConsumerSubscription(raw)
+	raw := EncodeConsumerSubscription(0, []string{"a", "b"}, false)
+	topics, err := DecodeConsumerSubscription(0, raw)
 	if err != nil {
 		t.Fatal(err)
 	}

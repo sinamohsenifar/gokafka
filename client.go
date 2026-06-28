@@ -63,6 +63,9 @@ func NewClient(cfg Config) (*Client, error) {
 	}
 	ctx := context.Background()
 	_, span := hub.StartSpan(ctx, "gokafka.connect")
+	if err := c.cluster.NegotiateVersions(ctx, Version); err != nil {
+		hub.Log(ctx, observe.LevelWarn, "api version negotiation failed, using defaults", observe.Error(err))
+	}
 	if err := c.cluster.Refresh(ctx, nil); err != nil {
 		span.RecordError(err)
 		span.SetStatus(observe.StatusError, err.Error())
@@ -70,9 +73,6 @@ func NewClient(cfg Config) (*Client, error) {
 		c.cluster.Close()
 		hub.Log(ctx, observe.LevelError, "metadata refresh failed", observe.Error(err))
 		return nil, fmt.Errorf("gokafka: metadata: %w", err)
-	}
-	if err := c.cluster.NegotiateVersions(ctx, Version); err != nil {
-		hub.Log(ctx, observe.LevelWarn, "api version negotiation failed, using defaults", observe.Error(err))
 	}
 	span.End()
 	hub.Log(ctx, observe.LevelInfo, "client connected", observe.String("client.id", cfg.ClientID))

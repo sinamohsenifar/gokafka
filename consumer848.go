@@ -82,6 +82,10 @@ func (c *Consumer) joinAndAssign848(ctx context.Context) error {
 			SubscribedTopicNames: append([]string(nil), c.topics...),
 			ServerAssignor:       &assignor,
 		}
+		if memberEpoch == 0 {
+			// Broker requires an empty (non-null) topic partition list when joining.
+			req.TopicPartitions = []protocol.TopicIDPartitions{}
+		}
 		if memberEpoch > 0 {
 			req.SubscribedTopicNames = nil
 			req.ServerAssignor = nil
@@ -148,9 +152,6 @@ func (c *Consumer) joinAndAssign848(ctx context.Context) error {
 			gotAssignment = true
 			break
 		}
-		if resp.MemberEpoch <= 0 {
-			continue
-		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -165,8 +166,9 @@ func (c *Consumer) joinAndAssign848(ctx context.Context) error {
 }
 
 func (c *Consumer) sendGroupHeartbeat848(ctx context.Context, coord int32, req protocol.ConsumerGroupHeartbeatRequest) (protocol.ConsumerGroupHeartbeatResponse, error) {
-	body := protocol.EncodeConsumerGroupHeartbeatRequest(req)
-	rb, err := c.client.cluster.Request(ctx, coord, protocol.APIConsumerGroupHeartbeat, protocol.VerConsumerGroupHeartbeat, body)
+	ver := c.client.cluster.NegotiatedVersion(protocol.APIConsumerGroupHeartbeat, protocol.VerConsumerGroupHeartbeat)
+	body := protocol.EncodeConsumerGroupHeartbeatRequest(ver, req)
+	rb, err := c.client.cluster.Request(ctx, coord, protocol.APIConsumerGroupHeartbeat, ver, body)
 	if err != nil {
 		return protocol.ConsumerGroupHeartbeatResponse{}, err
 	}

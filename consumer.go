@@ -144,13 +144,14 @@ func (c *Consumer) fetchFromBroker(
 	isolation int8,
 	maxRecords int,
 ) ([]Record, error) {
-	body := protocol.EncodeFetchRequest(group, parts, 500, 1, 50<<20, isolation)
-	rb, err := c.client.cluster.Request(ctx, node, protocol.APIFetch, protocol.VerFetch, body)
+	ver := c.client.cluster.NegotiatedVersion(protocol.APIFetch, protocol.VerFetch)
+	body := protocol.EncodeFetchRequest(ver, group, parts, 500, 1, 50<<20, isolation)
+	rb, err := c.client.cluster.Request(ctx, node, protocol.APIFetch, ver, body)
 	if err != nil {
 		c.client.observe.Metrics.OnConsume(0, err)
 		return nil, err
 	}
-	fetched, err := protocol.DecodeFetchResponse(rb)
+	fetched, err := protocol.DecodeFetchResponse(ver, rb)
 	if err != nil {
 		return nil, err
 	}
@@ -282,6 +283,9 @@ func (c *Consumer) joinAndAssign(ctx context.Context) error {
 		rebalanceMs = int32(c.client.cfg.Consumer.RebalanceTimeout / time.Millisecond)
 	}
 
+	joinVer := c.client.cluster.NegotiatedVersion(protocol.APIJoinGroup, protocol.VerJoinGroup)
+	syncVer := c.client.cluster.NegotiatedVersion(protocol.APISyncGroup, protocol.VerSyncGroup)
+
 	var joined protocol.JoinGroupResponse
 	var assignmentBytes []byte
 joinLoop:
@@ -289,14 +293,15 @@ joinLoop:
 	joinInner:
 		for {
 			joinBody := protocol.EncodeJoinGroupRequest(
+				joinVer,
 				c.group, c.memberID, assignor, c.client.cfg.Consumer.GroupInstanceID,
 				c.topics, sessionMs, rebalanceMs, c.isCooperative(),
 			)
-			rb, err := c.client.cluster.Request(ctx, coord, protocol.APIJoinGroup, protocol.VerJoinGroup, joinBody)
+			rb, err := c.client.cluster.Request(ctx, coord, protocol.APIJoinGroup, joinVer, joinBody)
 			if err != nil {
 				return err
 			}
-			joined, err = protocol.DecodeJoinGroupResponse(rb)
+			joined, err = protocol.DecodeJoinGroupResponse(joinVer, rb)
 			if errors.Is(err, protocol.ErrMemberIDRequired) {
 				c.mu.Lock()
 				c.memberID = joined.MemberID
@@ -327,7 +332,7 @@ joinLoop:
 		if joined.MemberID == joined.LeaderID {
 			var members []protocol.MemberSubscription
 			for mid, meta := range joined.Assignments {
-				topics, err := protocol.DecodeConsumerSubscription(meta)
+				topics, err := protocol.DecodeConsumerSubscription(joinVer, meta)
 				if err != nil {
 					return err
 				}
@@ -347,12 +352,12 @@ joinLoop:
 			}
 		}
 
-		syncBody := protocol.EncodeSyncGroupRequest(c.group, joined.MemberID, joined.Protocol, joined.GenerationID, syncAssignments)
-		rb, err := c.client.cluster.Request(ctx, coord, protocol.APISyncGroup, protocol.VerSyncGroup, syncBody)
+		syncBody := protocol.EncodeSyncGroupRequest(syncVer, c.group, joined.MemberID, joined.Protocol, c.client.cfg.Consumer.GroupInstanceID, joined.GenerationID, syncAssignments)
+		rb, err := c.client.cluster.Request(ctx, coord, protocol.APISyncGroup, syncVer, syncBody)
 		if err != nil {
 			return err
 		}
-		assignmentBytes, err = protocol.DecodeSyncGroupResponse(rb)
+		assignmentBytes, err = protocol.DecodeSyncGroupResponse(syncVer, rb)
 		if err != nil {
 			if c.shouldRejoin(err) {
 				c.invalidateCoordinator()

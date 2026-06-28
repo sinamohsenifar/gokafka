@@ -60,8 +60,12 @@ func (a *Admin) CreateTopics(ctx context.Context, specs ...TopicSpec) error {
 
 // DeleteTopics deletes topics by name.
 func (a *Admin) DeleteTopics(ctx context.Context, topics ...string) error {
-	body := protocol.EncodeDeleteTopicsRequest(topics)
-	resp, err := a.requestAny(ctx, protocol.APIDeleteTopics, protocol.VerDeleteTopics, body)
+	ver := a.client.cluster.NegotiatedVersion(protocol.APIDeleteTopics, protocol.VerDeleteTopics)
+	if ver <= 0 {
+		ver = protocol.VerDeleteTopics
+	}
+	body := protocol.EncodeDeleteTopicsRequest(ver, topics)
+	resp, err := a.requestAny(ctx, protocol.APIDeleteTopics, ver, body)
 	if err != nil {
 		return err
 	}

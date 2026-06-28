@@ -9,10 +9,7 @@ const (
 	CoordinatorTransaction int8 = 1
 )
 
-func EncodeConsumerSubscription(topics []string, cooperative bool) []byte {
-	if VerJoinGroup >= 6 {
-		return encodeConsumerSubscriptionFlex(topics, cooperative)
-	}
+func EncodeConsumerSubscription(_ int16, topics []string, cooperative bool) []byte {
 	return encodeConsumerSubscriptionLegacy(topics, cooperative)
 }
 
@@ -54,14 +51,14 @@ func strPtr(s string) *string {
 	return &s
 }
 
-func EncodeJoinGroupRequest(group, memberID, assignor, instanceID string, topics []string, sessionTimeoutMs, rebalanceTimeoutMs int32, cooperative bool) []byte {
-	if VerJoinGroup >= 6 {
-		return encodeJoinGroupRequestFlex(group, memberID, assignor, instanceID, topics, sessionTimeoutMs, rebalanceTimeoutMs, cooperative)
+func EncodeJoinGroupRequest(ver int16, group, memberID, assignor, instanceID string, topics []string, sessionTimeoutMs, rebalanceTimeoutMs int32, cooperative bool) []byte {
+	if ver >= 6 {
+		return encodeJoinGroupRequestFlex(ver, group, memberID, assignor, instanceID, topics, sessionTimeoutMs, rebalanceTimeoutMs, cooperative)
 	}
-	return encodeJoinGroupRequestLegacy(group, memberID, assignor, instanceID, topics, sessionTimeoutMs, rebalanceTimeoutMs, cooperative)
+	return encodeJoinGroupRequestLegacy(ver, group, memberID, assignor, instanceID, topics, sessionTimeoutMs, rebalanceTimeoutMs, cooperative)
 }
 
-func encodeJoinGroupRequestLegacy(group, memberID, assignor, instanceID string, topics []string, sessionTimeoutMs, rebalanceTimeoutMs int32, cooperative bool) []byte {
+func encodeJoinGroupRequestLegacy(ver int16, group, memberID, assignor, instanceID string, topics []string, sessionTimeoutMs, rebalanceTimeoutMs int32, cooperative bool) []byte {
 	if assignor == "" {
 		assignor = "range"
 	}
@@ -71,16 +68,16 @@ func encodeJoinGroupRequestLegacy(group, memberID, assignor, instanceID string, 
 	if rebalanceTimeoutMs <= 0 {
 		rebalanceTimeoutMs = sessionTimeoutMs
 	}
-	meta := EncodeConsumerSubscription(topics, cooperative)
+	meta := EncodeConsumerSubscription(ver, topics, cooperative)
 
 	buf := wire.NewBuffer(128)
 	buf.WriteString(group)
 	buf.WriteInt32(sessionTimeoutMs)
 	buf.WriteInt32(rebalanceTimeoutMs)
 	buf.WriteString(memberID)
-	if VerJoinGroup >= 5 && instanceID != "" {
+	if ver >= 5 && instanceID != "" {
 		buf.WriteNullableString(&instanceID)
-	} else if VerJoinGroup >= 5 {
+	} else if ver >= 5 {
 		buf.WriteInt16(-1)
 	}
 	consumerType := "consumer"
@@ -91,7 +88,7 @@ func encodeJoinGroupRequestLegacy(group, memberID, assignor, instanceID string, 
 	return buf.Bytes()
 }
 
-func encodeJoinGroupRequestFlex(group, memberID, assignor, instanceID string, topics []string, sessionTimeoutMs, rebalanceTimeoutMs int32, cooperative bool) []byte {
+func encodeJoinGroupRequestFlex(ver int16, group, memberID, assignor, instanceID string, topics []string, sessionTimeoutMs, rebalanceTimeoutMs int32, cooperative bool) []byte {
 	if assignor == "" {
 		assignor = "range"
 	}
@@ -101,7 +98,7 @@ func encodeJoinGroupRequestFlex(group, memberID, assignor, instanceID string, to
 	if rebalanceTimeoutMs <= 0 {
 		rebalanceTimeoutMs = sessionTimeoutMs
 	}
-	meta := EncodeConsumerSubscription(topics, cooperative)
+	meta := EncodeConsumerSubscription(ver, topics, cooperative)
 
 	buf := wire.NewBuffer(128)
 	buf.WriteCompactString(group)
@@ -114,7 +111,7 @@ func encodeJoinGroupRequestFlex(group, memberID, assignor, instanceID string, to
 		buf.WriteCompactNullableString(nil)
 	}
 	consumerType := "consumer"
-	buf.WriteCompactNullableString(&consumerType)
+	buf.WriteCompactString(consumerType)
 	buf.WriteCompactArrayLen(1)
 	buf.WriteCompactString(assignor)
 	buf.WriteCompactBytes(meta)
@@ -131,14 +128,14 @@ type JoinGroupResponse struct {
 	Assignments  map[string][]byte
 }
 
-func DecodeJoinGroupResponse(body []byte) (JoinGroupResponse, error) {
-	if VerJoinGroup >= 6 {
-		return decodeJoinGroupResponseFlex(body)
+func DecodeJoinGroupResponse(ver int16, body []byte) (JoinGroupResponse, error) {
+	if ver >= 6 {
+		return decodeJoinGroupResponseFlex(ver, body)
 	}
-	return decodeJoinGroupResponseLegacy(body)
+	return decodeJoinGroupResponseLegacy(ver, body)
 }
 
-func decodeJoinGroupResponseLegacy(body []byte) (JoinGroupResponse, error) {
+func decodeJoinGroupResponseLegacy(ver int16, body []byte) (JoinGroupResponse, error) {
 	buf := wire.FromBytes(body)
 	if _, err := buf.ReadInt32(); err != nil {
 		return JoinGroupResponse{}, err
@@ -176,7 +173,7 @@ func decodeJoinGroupResponseLegacy(body []byte) (JoinGroupResponse, error) {
 		if err != nil {
 			return JoinGroupResponse{}, err
 		}
-		if VerJoinGroup >= 5 {
+		if ver >= 5 {
 			if _, err := readNullableString(buf); err != nil {
 				return JoinGroupResponse{}, err
 			}
@@ -194,7 +191,7 @@ func decodeJoinGroupResponseLegacy(body []byte) (JoinGroupResponse, error) {
 	return result, nil
 }
 
-func decodeJoinGroupResponseFlex(body []byte) (JoinGroupResponse, error) {
+func decodeJoinGroupResponseFlex(ver int16, body []byte) (JoinGroupResponse, error) {
 	buf := wire.FromBytes(body)
 	if _, err := buf.ReadInt32(); err != nil {
 		return JoinGroupResponse{}, err
@@ -232,6 +229,11 @@ func decodeJoinGroupResponseFlex(body []byte) (JoinGroupResponse, error) {
 		if err != nil {
 			return JoinGroupResponse{}, err
 		}
+		if ver >= 5 {
+			if _, err := buf.ReadCompactNullableString(); err != nil { // group_instance_id
+				return JoinGroupResponse{}, err
+			}
+		}
 		meta, err := buf.ReadCompactBytes()
 		if err != nil {
 			return JoinGroupResponse{}, err
@@ -251,19 +253,26 @@ func decodeJoinGroupResponseFlex(body []byte) (JoinGroupResponse, error) {
 	return result, nil
 }
 
-func EncodeSyncGroupRequest(group, memberID, protocol string, generation int32, assignments map[string][]byte) []byte {
-	if VerSyncGroup >= 4 {
-		return encodeSyncGroupRequestFlex(group, memberID, protocol, generation, assignments)
+func EncodeSyncGroupRequest(ver int16, group, memberID, protocolName, groupInstanceID string, generation int32, assignments map[string][]byte) []byte {
+	if ver >= 4 {
+		return encodeSyncGroupRequestFlex(ver, group, memberID, protocolName, groupInstanceID, generation, assignments)
 	}
-	return encodeSyncGroupRequestLegacy(group, memberID, protocol, generation, assignments)
+	return encodeSyncGroupRequestLegacy(ver, group, memberID, groupInstanceID, generation, assignments)
 }
 
-func encodeSyncGroupRequestLegacy(group, memberID, protocol string, generation int32, assignments map[string][]byte) []byte {
+func encodeSyncGroupRequestLegacy(ver int16, group, memberID, groupInstanceID string, generation int32, assignments map[string][]byte) []byte {
 	buf := wire.NewBuffer(128)
 	buf.WriteString(group)
 	buf.WriteInt32(generation)
 	buf.WriteString(memberID)
-	buf.WriteString(protocol)
+	if ver >= 3 {
+		if groupInstanceID == "" {
+			buf.WriteNullableString(nil)
+		} else {
+			s := groupInstanceID
+			buf.WriteNullableString(&s)
+		}
+	}
 	buf.WriteInt32(int32(len(assignments)))
 	for mid, meta := range assignments {
 		buf.WriteString(mid)
@@ -272,24 +281,31 @@ func encodeSyncGroupRequestLegacy(group, memberID, protocol string, generation i
 	return buf.Bytes()
 }
 
-func encodeSyncGroupRequestFlex(group, memberID, protocol string, generation int32, assignments map[string][]byte) []byte {
+func encodeSyncGroupRequestFlex(ver int16, group, memberID, protocolName, groupInstanceID string, generation int32, assignments map[string][]byte) []byte {
 	buf := wire.NewBuffer(128)
 	buf.WriteCompactString(group)
 	buf.WriteInt32(generation)
 	buf.WriteCompactString(memberID)
-	buf.WriteCompactString(protocol)
+	if ver >= 3 {
+		buf.WriteCompactNullableString(strPtr(groupInstanceID))
+	}
+	if ver >= 5 {
+		buf.WriteCompactString("consumer")
+		buf.WriteCompactString(protocolName)
+	}
 	buf.WriteCompactArrayLen(len(assignments))
 	for mid, meta := range assignments {
 		buf.WriteCompactString(mid)
 		buf.WriteCompactBytes(meta)
+		buf.WriteEmptyTagSection()
 	}
 	buf.WriteEmptyTagSection()
 	return buf.Bytes()
 }
 
-func DecodeSyncGroupResponse(body []byte) ([]byte, error) {
-	if VerSyncGroup >= 4 {
-		return decodeSyncGroupResponseFlex(body)
+func DecodeSyncGroupResponse(ver int16, body []byte) ([]byte, error) {
+	if ver >= 4 {
+		return decodeSyncGroupResponseFlex(ver, body)
 	}
 	return decodeSyncGroupResponseLegacy(body)
 }
@@ -309,7 +325,7 @@ func decodeSyncGroupResponseLegacy(body []byte) ([]byte, error) {
 	return buf.ReadBytes()
 }
 
-func decodeSyncGroupResponseFlex(body []byte) ([]byte, error) {
+func decodeSyncGroupResponseFlex(ver int16, body []byte) ([]byte, error) {
 	buf := wire.FromBytes(body)
 	if _, err := buf.ReadInt32(); err != nil {
 		return nil, err
@@ -321,6 +337,14 @@ func decodeSyncGroupResponseFlex(body []byte) ([]byte, error) {
 	if errCode != 0 {
 		return nil, apiError("sync group", errCode)
 	}
+	if ver >= 5 {
+		if _, err := buf.ReadCompactNullableString(); err != nil { // protocol type
+			return nil, err
+		}
+		if _, err := buf.ReadCompactNullableString(); err != nil { // protocol name
+			return nil, err
+		}
+	}
 	assignment, err := buf.ReadCompactBytes()
 	if err != nil {
 		return nil, err
@@ -331,12 +355,13 @@ func decodeSyncGroupResponseFlex(body []byte) ([]byte, error) {
 	return assignment, nil
 }
 
-func EncodeHeartbeatRequest(group, memberID string, generation int32) []byte {
-	if VerHeartbeat >= 4 {
+func EncodeHeartbeatRequest(ver int16, group, memberID, groupInstanceID string, generation int32) []byte {
+	if ver >= 4 {
 		buf := wire.NewBuffer(32)
 		buf.WriteCompactString(group)
 		buf.WriteInt32(generation)
 		buf.WriteCompactString(memberID)
+		buf.WriteCompactNullableString(strPtr(groupInstanceID))
 		buf.WriteEmptyTagSection()
 		return buf.Bytes()
 	}
@@ -344,11 +369,19 @@ func EncodeHeartbeatRequest(group, memberID string, generation int32) []byte {
 	buf.WriteString(group)
 	buf.WriteInt32(generation)
 	buf.WriteString(memberID)
+	if ver >= 3 {
+		if groupInstanceID == "" {
+			buf.WriteNullableString(nil)
+		} else {
+			s := groupInstanceID
+			buf.WriteNullableString(&s)
+		}
+	}
 	return buf.Bytes()
 }
 
 // DecodeHeartbeatResponse reads the top-level error code from Heartbeat.
-func DecodeHeartbeatResponse(body []byte) (int16, error) {
+func DecodeHeartbeatResponse(ver int16, body []byte) (int16, error) {
 	buf := wire.FromBytes(body)
 	if _, err := buf.ReadInt32(); err != nil {
 		return 0, err
@@ -357,7 +390,7 @@ func DecodeHeartbeatResponse(body []byte) (int16, error) {
 	if err != nil {
 		return 0, err
 	}
-	if VerHeartbeat >= 4 {
+	if ver >= 4 {
 		if err := buf.SkipTagSection(); err != nil {
 			return 0, err
 		}
@@ -365,14 +398,31 @@ func DecodeHeartbeatResponse(body []byte) (int16, error) {
 	return code, nil
 }
 
-func EncodeLeaveGroupRequest(group, memberID string) []byte {
-	if VerLeaveGroup >= 4 {
+func EncodeLeaveGroupRequest(ver int16, group, memberID, groupInstanceID string) []byte {
+	if ver >= 4 {
 		buf := wire.NewBuffer(16)
 		buf.WriteCompactString(group)
 		buf.WriteCompactArrayLen(1)
 		buf.WriteCompactString(memberID)
+		buf.WriteCompactNullableString(strPtr(groupInstanceID))
+		if ver >= 5 {
+			buf.WriteCompactNullableString(nil) // reason
+		}
 		buf.WriteEmptyTagSection()
 		buf.WriteEmptyTagSection()
+		return buf.Bytes()
+	}
+	if ver >= 3 {
+		buf := wire.NewBuffer(16)
+		buf.WriteString(group)
+		buf.WriteInt32(1)
+		buf.WriteString(memberID)
+		if groupInstanceID == "" {
+			buf.WriteNullableString(nil)
+		} else {
+			s := groupInstanceID
+			buf.WriteNullableString(&s)
+		}
 		return buf.Bytes()
 	}
 	buf := wire.NewBuffer(16)
@@ -453,6 +503,7 @@ func encodeOffsetCommitRequestFlex(ver int16, group, memberID, groupInstanceID s
 			buf.WriteCompactNullableString(nil)
 			buf.WriteEmptyTagSection()
 		}
+		buf.WriteEmptyTagSection()
 	}
 	buf.WriteEmptyTagSection()
 	return buf.Bytes()
@@ -607,8 +658,21 @@ type TopicCreate struct {
 	Configs           map[string]string
 }
 
-func EncodeDeleteTopicsRequest(topics []string) []byte {
+func EncodeDeleteTopicsRequest(version int16, topics []string) []byte {
 	buf := wire.NewBuffer(32)
+	if version >= 6 {
+		buf.WriteCompactArrayLen(len(topics))
+		for _, t := range topics {
+			name := t
+			buf.WriteCompactNullableString(&name)
+			var zero wire.UUID
+			buf.WriteUUID(zero)
+			buf.WriteEmptyTagSection()
+		}
+		buf.WriteInt32(5000)
+		buf.WriteEmptyTagSection()
+		return buf.Bytes()
+	}
 	buf.WriteCompactArrayLen(len(topics))
 	for _, t := range topics {
 		buf.WriteCompactString(t)

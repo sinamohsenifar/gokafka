@@ -59,11 +59,11 @@ func DecodeShareGroupHeartbeatResponse(body []byte) (ShareGroupHeartbeatResponse
 	if out.HeartbeatIntervalMs, err = buf.ReadInt32(); err != nil {
 		return out, err
 	}
-	assignMark, err := buf.ReadUvarint()
+	presence, err := buf.ReadInt8()
 	if err != nil {
 		return out, err
 	}
-	if assignMark > 1 {
+	if presence >= 0 {
 		nTP, err := buf.ReadUvarint()
 		if err != nil {
 			return out, err
@@ -74,6 +74,9 @@ func DecodeShareGroupHeartbeatResponse(body []byte) (ShareGroupHeartbeatResponse
 				return out, err
 			}
 			out.Assignment = append(out.Assignment, tp)
+		}
+		if err := buf.SkipTagSection(); err != nil {
+			return out, err
 		}
 	}
 	if err := buf.SkipTagSection(); err != nil {

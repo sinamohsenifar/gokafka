@@ -21,8 +21,20 @@ func TestCompactStringRoundTrip(t *testing.T) {
 
 func TestPrependLength(t *testing.T) {
 	body := []byte{1, 2, 3}
- framed := wire.PrependLength(body)
+	framed := wire.PrependLength(body)
 	if len(framed) != 7 {
 		t.Fatalf("len=%d", len(framed))
+	}
+}
+
+func TestEmptyTagSectionRoundTrip(t *testing.T) {
+	buf := wire.NewBuffer(4)
+	buf.WriteEmptyTagSection()
+	r := wire.FromBytes(buf.Bytes())
+	if err := r.SkipTagSection(); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Remaining()) != 0 {
+		t.Fatalf("remaining=%x", r.Remaining())
 	}
 }

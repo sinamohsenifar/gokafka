@@ -25,23 +25,23 @@ type FetchedRecord struct {
 	Timestamp int64
 }
 
-func EncodeFetchRequest(_ string, partitions []FetchPartition, maxWaitMs int32, minBytes, maxBytes int32, isolationLevel int8) []byte {
-	if VerFetch >= 12 {
-		return encodeFetchRequestFlex(partitions, maxWaitMs, minBytes, maxBytes, isolationLevel)
+func EncodeFetchRequest(ver int16, _ string, partitions []FetchPartition, maxWaitMs int32, minBytes, maxBytes int32, isolationLevel int8) []byte {
+	if ver >= 12 {
+		return encodeFetchRequestFlex(ver, partitions, maxWaitMs, minBytes, maxBytes, isolationLevel)
 	}
-	return encodeFetchRequestLegacy(partitions, maxWaitMs, minBytes, maxBytes, isolationLevel)
+	return encodeFetchRequestLegacy(ver, partitions, maxWaitMs, minBytes, maxBytes, isolationLevel)
 }
 
-func encodeFetchRequestLegacy(partitions []FetchPartition, maxWaitMs, minBytes, maxBytes int32, isolationLevel int8) []byte {
+func encodeFetchRequestLegacy(ver int16, partitions []FetchPartition, maxWaitMs, minBytes, maxBytes int32, isolationLevel int8) []byte {
 	buf := wire.NewBuffer(128)
 	buf.WriteInt32(-1)
 	buf.WriteInt32(maxWaitMs)
 	buf.WriteInt32(minBytes)
 	buf.WriteInt32(maxBytes)
-	if VerFetch >= 4 {
+	if ver >= 4 {
 		buf.WriteInt8(isolationLevel)
 	}
-	if VerFetch >= 7 {
+	if ver >= 7 {
 		buf.WriteInt32(0)
 		buf.WriteInt32(0)
 	}
@@ -61,11 +61,11 @@ func encodeFetchRequestLegacy(partitions []FetchPartition, maxWaitMs, minBytes, 
 		buf.WriteInt32(int32(len(parts)))
 		for _, p := range parts {
 			buf.WriteInt32(p.Partition)
-			if VerFetch >= 9 {
+			if ver >= 9 {
 				buf.WriteInt32(-1)
 			}
 			buf.WriteInt64(p.Offset)
-			if VerFetch >= 5 {
+			if ver >= 5 {
 				buf.WriteInt64(-1)
 			}
 			maxB := p.MaxBytes
@@ -75,24 +75,24 @@ func encodeFetchRequestLegacy(partitions []FetchPartition, maxWaitMs, minBytes, 
 			buf.WriteInt32(maxB)
 		}
 	}
-	if VerFetch >= 10 {
+	if ver >= 10 {
 		buf.WriteInt32(0) // forgotten_topics_data
 	}
-	if VerFetch >= 11 {
+	if ver >= 11 {
 		buf.WriteString("") // rack_id
 	}
 	return buf.Bytes()
 }
 
-func encodeFetchRequestFlex(partitions []FetchPartition, maxWaitMs, minBytes, maxBytes int32, isolationLevel int8) []byte {
+func encodeFetchRequestFlex(ver int16, partitions []FetchPartition, maxWaitMs, minBytes, maxBytes int32, isolationLevel int8) []byte {
 	buf := wire.NewBuffer(128)
 	buf.WriteInt32(-1)
 	buf.WriteInt32(maxWaitMs)
 	buf.WriteInt32(minBytes)
 	buf.WriteInt32(maxBytes)
 	buf.WriteInt8(isolationLevel)
-	buf.WriteInt32(0)
-	buf.WriteInt32(0)
+	buf.WriteInt32(0)  // session_id
+	buf.WriteInt32(-1) // session_epoch
 
 	topics := map[string][]FetchPartition{}
 	order := make([]string, 0)
@@ -109,10 +109,14 @@ func encodeFetchRequestFlex(partitions []FetchPartition, maxWaitMs, minBytes, ma
 		buf.WriteCompactArrayLen(len(parts))
 		for _, p := range parts {
 			buf.WriteInt32(p.Partition)
-			buf.WriteInt32(-1)
+			buf.WriteInt32(-1) // current_leader_epoch
 			buf.WriteInt64(p.Offset)
-			buf.WriteInt32(-1)
-			buf.WriteInt64(-1)
+			if ver >= 12 {
+				buf.WriteInt32(-1) // last_fetched_epoch
+			}
+			if ver >= 5 {
+				buf.WriteInt64(-1) // log_start_offset
+			}
 			maxB := p.MaxBytes
 			if maxB <= 0 {
 				maxB = 1 << 20
@@ -120,24 +124,29 @@ func encodeFetchRequestFlex(partitions []FetchPartition, maxWaitMs, minBytes, ma
 			buf.WriteInt32(maxB)
 			buf.WriteEmptyTagSection()
 		}
+		buf.WriteEmptyTagSection()
+	}
+	buf.WriteCompactArrayLen(0) // forgotten_topics_data
+	if ver >= 11 {
+		buf.WriteCompactString("")
 	}
 	buf.WriteEmptyTagSection()
 	return buf.Bytes()
 }
 
-func DecodeFetchResponse(body []byte) ([]FetchedRecord, error) {
-	if VerFetch >= 12 {
-		return decodeFetchResponseFlex(body)
+func DecodeFetchResponse(ver int16, body []byte) ([]FetchedRecord, error) {
+	if ver >= 12 {
+		return decodeFetchResponseFlex(ver, body)
 	}
-	return decodeFetchResponseLegacy(body)
+	return decodeFetchResponseLegacy(ver, body)
 }
 
-func decodeFetchResponseLegacy(body []byte) ([]FetchedRecord, error) {
+func decodeFetchResponseLegacy(ver int16, body []byte) ([]FetchedRecord, error) {
 	buf := wire.FromBytes(body)
 	if _, err := buf.ReadInt32(); err != nil {
 		return nil, err
 	}
-	if VerFetch >= 7 {
+	if ver >= 7 {
 		if _, err := buf.ReadInt16(); err != nil {
 			return nil, err
 		}
@@ -177,22 +186,22 @@ func decodeFetchResponseLegacy(body []byte) ([]FetchedRecord, error) {
 			if _, err := buf.ReadInt64(); err != nil { // high_watermark
 				return nil, err
 			}
-			if VerFetch >= 4 {
+			if ver >= 4 {
 				if _, err := buf.ReadInt64(); err != nil { // last_stable_offset
 					return nil, err
 				}
 			}
-			if VerFetch >= 5 {
+			if ver >= 5 {
 				if _, err := buf.ReadInt64(); err != nil { // log_start_offset
 					return nil, err
 				}
 			}
-			if VerFetch >= 4 {
+			if ver >= 4 {
 				if err := skipAbortedTransactions(buf); err != nil {
 					return nil, err
 				}
 			}
-			if VerFetch >= 11 {
+			if ver >= 11 {
 				if _, err := buf.ReadInt32(); err != nil { // preferred_read_replica
 					return nil, err
 				}
@@ -227,10 +236,18 @@ func skipAbortedTransactions(buf *wire.Buffer) error {
 	return nil
 }
 
-func decodeFetchResponseFlex(body []byte) ([]FetchedRecord, error) {
+func decodeFetchResponseFlex(ver int16, body []byte) ([]FetchedRecord, error) {
 	buf := wire.FromBytes(body)
-	if _, err := buf.ReadInt32(); err != nil {
+	if _, err := buf.ReadInt32(); err != nil { // throttle_time_ms
 		return nil, err
+	}
+	if ver >= 7 {
+		if _, err := buf.ReadInt16(); err != nil { // error_code
+			return nil, err
+		}
+		if _, err := buf.ReadInt32(); err != nil { // session_id
+			return nil, err
+		}
 	}
 	nTopics, err := buf.ReadUvarint()
 	if err != nil {
@@ -261,11 +278,28 @@ func decodeFetchResponseFlex(body []byte) ([]FetchedRecord, error) {
 			if errCode != 0 {
 				return nil, fmt.Errorf("protocol: fetch partition error %d", errCode)
 			}
-			if _, err := buf.ReadInt64(); err != nil {
+			if _, err := buf.ReadInt64(); err != nil { // high_watermark
 				return nil, err
 			}
-			if _, err := buf.ReadInt32(); err != nil {
-				return nil, err
+			if ver >= 4 {
+				if _, err := buf.ReadInt64(); err != nil { // last_stable_offset
+					return nil, err
+				}
+			}
+			if ver >= 5 {
+				if _, err := buf.ReadInt64(); err != nil { // log_start_offset
+					return nil, err
+				}
+			}
+			if ver >= 4 {
+				if err := skipAbortedTransactionsFlex(buf); err != nil {
+					return nil, err
+				}
+			}
+			if ver >= 11 {
+				if _, err := buf.ReadInt32(); err != nil { // preferred_read_replica
+					return nil, err
+				}
 			}
 			records, err := buf.ReadCompactBytes()
 			if err != nil {
@@ -280,11 +314,30 @@ func decodeFetchResponseFlex(body []byte) ([]FetchedRecord, error) {
 				return nil, err
 			}
 		}
+		if err := buf.SkipTagSection(); err != nil { // topic tags
+			return nil, err
+		}
 	}
 	if err := buf.SkipTagSection(); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+func skipAbortedTransactionsFlex(buf *wire.Buffer) error {
+	n, err := buf.ReadUvarint()
+	if err != nil || n == 0 {
+		return err
+	}
+	for i := 1; i < int(n); i++ {
+		if _, err := buf.ReadInt64(); err != nil {
+			return err
+		}
+		if _, err := buf.ReadInt64(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func decodeRecordBatch(topic string, part int32, data []byte) ([]FetchedRecord, error) {

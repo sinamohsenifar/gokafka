@@ -190,17 +190,22 @@ func (b *Buffer) ReadVarint() (int, error) {
 
 func (b *Buffer) SkipTagSection() error {
 	n, err := b.ReadUvarint()
-	if err != nil {
+	if err != nil || n == 0 {
 		return err
 	}
-	if n == 0 {
-		return nil
+	for i := uint(0); i < n; i++ {
+		if _, err := b.ReadUvarint(); err != nil { // tag
+			return err
+		}
+		size, err := b.ReadUvarint()
+		if err != nil {
+			return err
+		}
+		if b.I+int(size) > len(b.B) {
+			return ErrShortBuffer
+		}
+		b.I += int(size)
 	}
-	skip := int(n) - 1
-	if b.I+skip > len(b.B) {
-		return ErrShortBuffer
-	}
-	b.I += skip
 	return nil
 }
 
