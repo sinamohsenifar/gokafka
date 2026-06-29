@@ -213,6 +213,57 @@ func (r *Registry) SetCompatibility(ctx context.Context, subject, level string) 
 	return r.put(ctx, path, map[string]any{"compatibility": level}, nil)
 }
 
+// Mode returns the registry mode (pass subject "" for the global mode):
+// READWRITE, READONLY, or IMPORT.
+func (r *Registry) Mode(ctx context.Context, subject string) (string, error) {
+	path := "/mode"
+	if subject != "" {
+		path = "/mode/" + escapeSubjectPath(subject) + "?defaultToGlobal=true"
+	}
+	var out struct {
+		Mode string `json:"mode"`
+	}
+	if err := r.get(ctx, path, &out); err != nil {
+		return "", err
+	}
+	return out.Mode, nil
+}
+
+// SetMode sets the registry mode (pass subject "" for global): READWRITE,
+// READONLY, or IMPORT.
+func (r *Registry) SetMode(ctx context.Context, subject, mode string) error {
+	path := "/mode"
+	if subject != "" {
+		path = "/mode/" + escapeSubjectPath(subject)
+	}
+	return r.put(ctx, path, map[string]any{"mode": mode}, nil)
+}
+
+// IsRegistered checks whether a schema is already registered under a subject
+// without registering it (POST /subjects/{subject}). If found, it returns the
+// existing subject/version/id and ok=true; if the schema or subject is not
+// found, ok is false with a nil error.
+func (r *Registry) IsRegistered(ctx context.Context, subject, schemaType, schema string) (SubjectVersion, bool, error) {
+	body := map[string]any{"schema": schema}
+	if schemaType != "" {
+		body["schemaType"] = schemaType
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		return SubjectVersion{}, false, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.base+"/subjects/"+escapeSubjectPath(subject), bytes.NewReader(b))
+	if err != nil {
+		return SubjectVersion{}, false, err
+	}
+	var out SubjectVersion
+	found, err := r.doLookup(req, &out)
+	if err != nil || !found {
+		return SubjectVersion{}, false, err
+	}
+	return out, true, nil
+}
+
 // DeleteSubjectVersion deletes one version (soft by default; permanent=true frees
 // it, only allowed after a soft delete). Returns the deleted version number.
 func (r *Registry) DeleteSubjectVersion(ctx context.Context, subject, version string, permanent bool) (int, error) {
@@ -313,6 +364,45 @@ func (r *Registry) do(req *http.Request, out any) error {
 		return nil
 	}
 	return json.Unmarshal(data, out)
+}
+
+// doLookup runs a request that may legitimately 404 (schema/subject not found),
+// returning ok=false with a nil error in that case rather than an error.
+func (r *Registry) doLookup(req *http.Request, out any) (bool, error) {
+	req.Header.Set("Content-Type", "application/vnd.schemaregistry.v1+json")
+	req.Header.Set("Accept", "application/vnd.schemaregistry.v1+json")
+	if r.user != "" {
+		req.SetBasicAuth(r.user, r.pass)
+	}
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	limited := io.LimitReader(resp.Body, int64(limits.MaxHTTPBodyBytes())+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return false, err
+	}
+	if len(data) > limits.MaxHTTPBodyBytes() {
+		return false, fmt.Errorf("schema: response body exceeds limit %d", limits.MaxHTTPBodyBytes())
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if resp.StatusCode >= 300 {
+		snippet := string(data)
+		if len(snippet) > 512 {
+			snippet = snippet[:512] + "..."
+		}
+		return false, fmt.Errorf("schema: HTTP %d: %s", resp.StatusCode, snippet)
+	}
+	if out != nil {
+		if err := json.Unmarshal(data, out); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 func escapeSubjectPath(subject string) string {

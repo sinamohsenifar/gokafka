@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.15] - 2026-06-29
+
+### Added
+
+- **Schema Registry: `IsRegistered`, `Mode`, `SetMode`.** `IsRegistered(subject, type, schema)` probes whether a schema is already registered (`POST /subjects/{subject}`) without registering it, returning the existing subject/version/id (or `ok=false` on 404). `Mode` / `SetMode` read and set the registry mode (`READWRITE` / `READONLY` / `IMPORT`, global or per-subject). This completes the Schema Registry lifecycle surface.
+
 ## [0.25.14] - 2026-06-29
 
 ### Added

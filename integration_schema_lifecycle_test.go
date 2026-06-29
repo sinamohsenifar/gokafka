@@ -94,6 +94,25 @@ func TestIntegrationSchemaLifecycle(t *testing.T) {
 		t.Fatalf("subject %q not in ListSubjects", subject)
 	}
 
+	// IsRegistered: v1 is registered under the subject; an unrelated schema is not.
+	sv, ok, err := reg.IsRegistered(ctx, subject, "AVRO", v1)
+	if err != nil || !ok || sv.ID != id1 {
+		t.Fatalf("IsRegistered(v1) = (%+v, %v, %v), want found id %d", sv, ok, err, id1)
+	}
+	unrelated := `{"type":"record","name":"Other","fields":[{"name":"x","type":"long"}]}`
+	if _, ok, err := reg.IsRegistered(ctx, subject, "AVRO", unrelated); err != nil || ok {
+		t.Fatalf("IsRegistered(unrelated) = (ok=%v, err=%v), want not found", ok, err)
+	}
+
+	// Mode: the /mode endpoint is Confluent-specific; some compatibility layers
+	// (e.g. Apicurio ccompat) return "Operation not supported". Treat that as a
+	// skip — the global mode is READWRITE on a registry that does support it.
+	if mode, err := reg.Mode(ctx, ""); err != nil {
+		t.Logf("Mode(global) not supported by this registry: %v", err)
+	} else if mode != "READWRITE" {
+		t.Logf("global mode = %q (expected READWRITE on a default registry)", mode)
+	}
+
 	if _, err := reg.DeleteSubject(ctx, subject, false); err != nil {
 		t.Fatalf("soft delete subject: %v", err)
 	}
