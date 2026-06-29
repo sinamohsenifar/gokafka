@@ -22,6 +22,16 @@ type TransactionalProducer struct {
 	coordinator      int32
 	mu               sync.Mutex
 	open             bool
+	// tv2 is set when the cluster has finalized transaction.version >= 2
+	// (KIP-890 transactions v2). Under TV2 the partition leader registers data
+	// partitions with the transaction implicitly on the Produce path (Produce
+	// v12+ carries the transactional id), so the client skips the explicit
+	// AddPartitionsToTxn round-trip on the produce hot path. (The consumer-group
+	// offsets registration is NOT implicit and still uses AddOffsetsToTxn — see
+	// ensureGroupOffsets.) The producer epoch is bumped server-side on EndTxn;
+	// GoKafka re-initializes the producer id on each BeginTransaction, so it
+	// always acquires a fresh, valid epoch without EndTxn v5 epoch adoption.
+	tv2 bool
 }
 
 // BeginTransaction initializes producer id and starts a transaction.
@@ -42,6 +52,9 @@ func (p *Producer) BeginTransaction(ctx context.Context) (*TransactionalProducer
 	}
 	if err := tp.init(ctx); err != nil {
 		return nil, err
+	}
+	if lvl, ok := p.client.BrokerFeature("transaction.version"); ok && lvl >= 2 {
+		tp.tv2 = true
 	}
 	tp.open = true
 	return tp, nil
@@ -199,6 +212,11 @@ func (t *TransactionalProducer) txnCoordRequest(ctx context.Context, apiKey, ver
 }
 
 func (t *TransactionalProducer) ensureGroupOffsets(ctx context.Context, groupID string) error {
+	// Note: even under TV2 the consumer-group offsets topic must be registered
+	// with the transaction via AddOffsetsToTxn before TxnOffsetCommit — unlike
+	// data partitions, the offsets registration is not implicit on the commit
+	// path (the broker returns INVALID_TXN_STATE otherwise). So this RPC is kept
+	// regardless of transaction.version.
 	if _, ok := t.registeredGroups[groupID]; ok {
 		return nil
 	}
@@ -214,6 +232,12 @@ func (t *TransactionalProducer) ensureGroupOffsets(ctx context.Context, groupID 
 }
 
 func (t *TransactionalProducer) ensurePartitions(ctx context.Context, records []Record) error {
+	if t.tv2 {
+		// KIP-890 TV2: the partition leader registers the partition with the
+		// transaction implicitly on the first transactional Produce (v12+
+		// carries the transactional id), so the client skips AddPartitionsToTxn.
+		return nil
+	}
 	pending := map[string][]int32{}
 	var newKeys []partKey
 	for _, r := range records {

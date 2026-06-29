@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.14] - 2026-06-29
+
+### Added
+
+- **KIP-890 transactions v2 (TV2) produce path.** When the cluster has finalized `transaction.version >= 2` (detected via `BrokerFeature`, the default on Kafka 4.x), the transactional producer now skips the explicit `AddPartitionsToTxn` round-trip: the partition leader registers data partitions with the transaction implicitly on the first transactional `Produce`. This removes one coordinator round-trip per partition per transaction. Gated on the finalized feature, so clusters on `transaction.version < 2` (e.g. Kafka 3.9) transparently keep the v1 path.
+- `ErrCodeTransactionAbortable` (120) — the KIP-890 abortable-error code is now a named, non-retriable error so it surfaces correctly (the caller must abort the transaction).
+
+### Changed
+
+- **Produce upgraded to v12** (from v9). v12 is required for the broker's implicit transactional partition registration (TV2) and also carries KIP-951 leader-discovery hints (current-leader / node-endpoints, parsed as tagged fields). The request wire format is unchanged across v9–v12; verified against Kafka 3.9–4.3.
+- The consumer-group offsets registration for `SendOffsetsToTxn` continues to use `AddOffsetsToTxn` even under TV2 — unlike data partitions, that registration is **not** implicit on the `TxnOffsetCommit` path (the broker returns `INVALID_TXN_STATE` otherwise). This was confirmed empirically against a TV2 broker.
+
 ## [0.25.13] - 2026-06-29
 
 ### Added

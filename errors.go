@@ -40,6 +40,7 @@ const (
 	ErrCodeInvalidProducerEpoch         ErrorCode = 47
 	ErrCodeInvalidTxnState              ErrorCode = 48
 	ErrCodeConcurrentTransactions       ErrorCode = 51
+	ErrCodeTransactionAbortable         ErrorCode = 120
 	ErrCodeShareSessionNotFound         ErrorCode = 122
 	ErrCodeInvalidShareSessionEpoch     ErrorCode = 123
 )
