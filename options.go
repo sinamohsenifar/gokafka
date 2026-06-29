@@ -325,7 +325,9 @@ func defaultConcurrency() ConcurrencyConfig {
 }
 
 func defaultRetry() RetryConfig {
-	return RetryConfig{MaxAttempts: 3, Backoff: 100 * time.Millisecond, MaxBackoff: 2 * time.Second}
+	// Patient enough to ride out a leader election / broker restart on retriable
+	// errors (~13s worst case). Non-retriable errors still fail immediately.
+	return RetryConfig{MaxAttempts: 10, Backoff: 100 * time.Millisecond, MaxBackoff: 2 * time.Second}
 }
 
 // Security helpers for common setups.

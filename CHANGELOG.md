@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-06-29
+
+### Fixed
+
+- **`read_committed` filters aborted records** — the fetch decoder now uses the broker's aborted-transactions list to drop records from aborted transactions (previously it only skipped control markers, so aborted records leaked to `read_committed` consumers). Also skips the per-element tagged-fields section in the flex aborted-transactions list.
+- **Broker/leader failover robustness** — transport/connection failures (`io.EOF`, `net.Error`, `net.ErrClosed`) are now retriable, so a broker dying mid-request triggers a metadata refresh and retry to the new leader; `cluster.Refresh` drops a dead cached seed connection and re-dials another seed (surviving loss of the bootstrap broker); `AsKafkaError` uses `errors.As` so wrapped `*KafkaError` values are matched.
+- **`CONCURRENT_TRANSACTIONS` (51)** is retriable, so back-to-back begin/commit transactions no longer fail `InitProducerID` while the prior transaction is still settling.
+
+### Changed
+
+- Default `RetryConfig` is more patient (10 attempts, ~13s on retriable errors) to ride out leader election and broker restarts. Non-retriable errors still fail fast.
+
+### Added
+
+- 3-broker KRaft compose (`docker-compose.multibroker.yml`) and `-tags=multibroker` tests for cross-broker produce/consume and partition-leader failover.
+
 ## [0.25.0] - 2026-06-29
 
 ### Fixed

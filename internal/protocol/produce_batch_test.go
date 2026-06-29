@@ -20,7 +20,7 @@ func TestRecordBatchRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("codec %d encode: %v", codec, err)
 		}
-		got, err := decodeRecordBatch("t", 0, batch)
+		got, err := decodeRecordBatch("t", 0, batch, nil)
 		if err != nil {
 			t.Fatalf("codec %d decode: %v", codec, err)
 		}

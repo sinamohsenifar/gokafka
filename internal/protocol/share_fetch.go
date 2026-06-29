@@ -177,7 +177,7 @@ func DecodeShareFetchResponse(body []byte, topicName func(wire.UUID) (string, bo
 				return out, fmt.Errorf("protocol: share fetch partition %s-%d error %d", topic, part, errCode)
 			}
 			if len(records) > 0 {
-				recs, err := decodeRecordBatch(topic, part, records)
+				recs, err := decodeRecordBatch(topic, part, records, nil)
 				if err != nil {
 					return out, err
 				}

@@ -1,0 +1,60 @@
+# 3-broker KRaft cluster for multi-broker and leader-failover tests.
+# Plaintext only (security is covered by the single-broker stack). Internal
+# topics use RF=3 / min-ISR=2 so the cluster survives losing one broker.
+#
+#   docker compose -f docker-compose.multibroker.yml up -d
+#   KAFKA_MULTI_BROKERS=127.0.0.1:19092,127.0.0.1:19093,127.0.0.1:19094 \
+#     go test -tags=multibroker -run TestMultiBroker -timeout 5m .
+#
+# The failover test stops/starts containers named gokafka-mb-1/2/3 (node id N).
+
+x-broker: &broker
+  image: ${KAFKA_IMAGE:-apache/kafka:4.1.2}
+  environment: &broker-env
+    KAFKA_PROCESS_ROLES: broker,controller
+    CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@gokafka-mb-1:29093,2@gokafka-mb-2:29093,3@gokafka-mb-3:29093
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,PLAINTEXT:PLAINTEXT
+    KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    KAFKA_GROUP_COORDINATOR_REBALANCE_PROTOCOL: consumer
+    KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    KAFKA_HEAP_OPTS: "-Xmx512M -Xms256M"
+
+services:
+  gokafka-mb-1:
+    <<: *broker
+    container_name: gokafka-mb-1
+    hostname: gokafka-mb-1
+    ports: ["19092:9092"]
+    environment:
+      <<: *broker-env
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENERS: CONTROLLER://:29093,INTERNAL://:29092,PLAINTEXT://:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://gokafka-mb-1:29092,PLAINTEXT://127.0.0.1:19092
+
+  gokafka-mb-2:
+    <<: *broker
+    container_name: gokafka-mb-2
+    hostname: gokafka-mb-2
+    ports: ["19093:9092"]
+    environment:
+      <<: *broker-env
+      KAFKA_NODE_ID: 2
+      KAFKA_LISTENERS: CONTROLLER://:29093,INTERNAL://:29092,PLAINTEXT://:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://gokafka-mb-2:29092,PLAINTEXT://127.0.0.1:19093
+
+  gokafka-mb-3:
+    <<: *broker
+    container_name: gokafka-mb-3
+    hostname: gokafka-mb-3
+    ports: ["19094:9092"]
+    environment:
+      <<: *broker-env
+      KAFKA_NODE_ID: 3
+      KAFKA_LISTENERS: CONTROLLER://:29093,INTERNAL://:29092,PLAINTEXT://:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://gokafka-mb-3:29092,PLAINTEXT://127.0.0.1:19094

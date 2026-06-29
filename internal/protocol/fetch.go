@@ -200,8 +200,10 @@ func decodeFetchResponseLegacy(ver int16, body []byte) ([]FetchedRecord, error) 
 					return nil, err
 				}
 			}
+			var aborted []abortedTxn
 			if ver >= 4 {
-				if err := skipAbortedTransactions(buf); err != nil {
+				aborted, err = readAbortedTransactions(buf)
+				if err != nil {
 					return nil, err
 				}
 			}
@@ -214,7 +216,7 @@ func decodeFetchResponseLegacy(ver int16, body []byte) ([]FetchedRecord, error) 
 			if err != nil {
 				return nil, err
 			}
-			recs, err := decodeRecordBatch(topic, part, records)
+			recs, err := decodeRecordBatch(topic, part, records, aborted)
 			if err != nil {
 				return nil, err
 			}
@@ -224,20 +226,27 @@ func decodeFetchResponseLegacy(ver int16, body []byte) ([]FetchedRecord, error) 
 	return out, nil
 }
 
-func skipAbortedTransactions(buf *wire.Buffer) error {
+func readAbortedTransactions(buf *wire.Buffer) ([]abortedTxn, error) {
 	n, err := buf.ReadInt32()
 	if err != nil {
-		return err
+		return nil, err
 	}
+	if n <= 0 {
+		return nil, nil
+	}
+	out := make([]abortedTxn, 0, safePrealloc(int(n)))
 	for i := int32(0); i < n; i++ {
-		if _, err := buf.ReadInt64(); err != nil {
-			return err
+		pid, err := buf.ReadInt64()
+		if err != nil {
+			return nil, err
 		}
-		if _, err := buf.ReadInt64(); err != nil {
-			return err
+		fo, err := buf.ReadInt64()
+		if err != nil {
+			return nil, err
 		}
+		out = append(out, abortedTxn{producerID: pid, firstOffset: fo})
 	}
-	return nil
+	return out, nil
 }
 
 func decodeFetchResponseFlex(ver int16, body []byte) ([]FetchedRecord, error) {
@@ -295,8 +304,10 @@ func decodeFetchResponseFlex(ver int16, body []byte) ([]FetchedRecord, error) {
 					return nil, err
 				}
 			}
+			var aborted []abortedTxn
 			if ver >= 4 {
-				if err := skipAbortedTransactionsFlex(buf); err != nil {
+				aborted, err = readAbortedTransactionsFlex(buf)
+				if err != nil {
 					return nil, err
 				}
 			}
@@ -309,7 +320,7 @@ func decodeFetchResponseFlex(ver int16, body []byte) ([]FetchedRecord, error) {
 			if err != nil {
 				return nil, err
 			}
-			recs, err := decodeRecordBatch(topic, part, records)
+			recs, err := decodeRecordBatch(topic, part, records, aborted)
 			if err != nil {
 				return nil, err
 			}
@@ -328,41 +339,94 @@ func decodeFetchResponseFlex(ver int16, body []byte) ([]FetchedRecord, error) {
 	return out, nil
 }
 
-func skipAbortedTransactionsFlex(buf *wire.Buffer) error {
+func readAbortedTransactionsFlex(buf *wire.Buffer) ([]abortedTxn, error) {
 	n, err := buf.ReadUvarint()
-	if err != nil || n == 0 {
-		return err
+	if err != nil || n <= 1 {
+		return nil, err
 	}
+	out := make([]abortedTxn, 0, safePrealloc(int(n)-1))
 	for i := 1; i < int(n); i++ {
-		if _, err := buf.ReadInt64(); err != nil {
-			return err
+		pid, err := buf.ReadInt64()
+		if err != nil {
+			return nil, err
 		}
-		if _, err := buf.ReadInt64(); err != nil {
-			return err
+		fo, err := buf.ReadInt64()
+		if err != nil {
+			return nil, err
 		}
+		if err := buf.SkipTagSection(); err != nil { // per-element tagged fields (flex)
+			return nil, err
+		}
+		out = append(out, abortedTxn{producerID: pid, firstOffset: fo})
 	}
-	return nil
+	return out, nil
 }
 
-func decodeRecordBatch(topic string, part int32, data []byte) ([]FetchedRecord, error) {
+// abortedTxn is one entry of a Fetch response's aborted-transactions list.
+type abortedTxn struct {
+	producerID  int64
+	firstOffset int64
+}
+
+// decodeRecordBatch decodes a partition's record-batch blob, applying
+// read_committed filtering using the broker's aborted-transactions list
+// (empty under read_uncommitted). Records from aborted transactions and
+// transaction control markers are dropped, but a control marker carrying the
+// batch's last offset is emitted so the consumer still advances past them.
+func decodeRecordBatch(topic string, part int32, data []byte, aborted []abortedTxn) ([]FetchedRecord, error) {
 	var out []FetchedRecord
+	var abortedPIDs map[int64]bool
+	ai := 0
 	for len(data) >= 12 {
 		batchLen := int(binary.BigEndian.Uint32(data[8:12]))
 		total := 12 + batchLen
 		if batchLen < 0 || total > len(data) {
 			break
 		}
-		recs, err := decodeOneRecordBatch(topic, part, data[:total])
+		info, err := decodeOneRecordBatch(topic, part, data[:total])
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, recs...)
 		data = data[total:]
+		if info == nil {
+			continue
+		}
+		// Transactions whose first offset is at or before this batch are now
+		// known to be aborted (the list is ordered by first offset).
+		for ai < len(aborted) && aborted[ai].firstOffset <= info.baseOffset {
+			if abortedPIDs == nil {
+				abortedPIDs = make(map[int64]bool)
+			}
+			abortedPIDs[aborted[ai].producerID] = true
+			ai++
+		}
+		switch {
+		case info.isControl:
+			// Commit/abort marker ends the producer's transaction; never delivered.
+			delete(abortedPIDs, info.producerID)
+			out = append(out, FetchedRecord{Topic: topic, Partition: part, Offset: info.lastOffset, Control: true})
+		case info.isTransactional && abortedPIDs[info.producerID]:
+			// Records from an aborted transaction: drop, but advance past them.
+			out = append(out, FetchedRecord{Topic: topic, Partition: part, Offset: info.lastOffset, Control: true})
+		default:
+			out = append(out, info.records...)
+		}
 	}
 	return out, nil
 }
 
-func decodeOneRecordBatch(topic string, part int32, batch []byte) ([]FetchedRecord, error) {
+// recordBatchInfo is a decoded record batch plus the metadata needed for
+// read_committed filtering.
+type recordBatchInfo struct {
+	baseOffset      int64
+	lastOffset      int64
+	producerID      int64
+	isControl       bool
+	isTransactional bool
+	records         []FetchedRecord
+}
+
+func decodeOneRecordBatch(topic string, part int32, batch []byte) (*recordBatchInfo, error) {
 	if len(batch) < 65 {
 		return nil, nil
 	}
@@ -398,16 +462,6 @@ func decodeOneRecordBatch(topic string, part int32, batch []byte) ([]FetchedReco
 	if err != nil {
 		return nil, err
 	}
-	if attributes&0x20 != 0 {
-		// Control batch (transaction commit/abort marker). Don't parse its
-		// records; emit a single control marker carrying the batch's last offset
-		// so the consumer advances past it without delivering anything.
-		return []FetchedRecord{{
-			Topic: topic, Partition: part,
-			Offset:  baseOffset + int64(lastOffsetDelta),
-			Control: true,
-		}}, nil
-	}
 	firstTimestamp, err := buf.ReadInt64()
 	if err != nil {
 		return nil, err
@@ -415,7 +469,8 @@ func decodeOneRecordBatch(topic string, part int32, batch []byte) ([]FetchedReco
 	if _, err := buf.ReadInt64(); err != nil { // maxTimestamp
 		return nil, err
 	}
-	if _, err := buf.ReadInt64(); err != nil { // producerId
+	producerID, err := buf.ReadInt64() // producerId
+	if err != nil {
 		return nil, err
 	}
 	if _, err := buf.ReadInt16(); err != nil { // producerEpoch
@@ -427,16 +482,31 @@ func decodeOneRecordBatch(topic string, part int32, batch []byte) ([]FetchedReco
 	if _, err := buf.ReadInt32(); err != nil { // numRecords
 		return nil, err
 	}
+	info := &recordBatchInfo{
+		baseOffset:      baseOffset,
+		lastOffset:      baseOffset + int64(lastOffsetDelta),
+		producerID:      producerID,
+		isControl:       attributes&0x20 != 0,
+		isTransactional: attributes&0x10 != 0,
+	}
+	if info.isControl {
+		// Control batch (commit/abort marker): not parsed or delivered.
+		return info, nil
+	}
 	recordsBytes := buf.Remaining()
 	codec := int8(attributes & 0x7)
 	if codec != 0 {
-		var err error
 		recordsBytes, err = compress.Decompress(codec, recordsBytes)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return parseRecords(topic, part, recordsBytes, baseOffset, firstTimestamp)
+	recs, err := parseRecords(topic, part, recordsBytes, baseOffset, firstTimestamp)
+	if err != nil {
+		return nil, err
+	}
+	info.records = recs
+	return info, nil
 }
 
 func parseRecords(topic string, part int32, data []byte, baseOffset, baseTimestamp int64) ([]FetchedRecord, error) {

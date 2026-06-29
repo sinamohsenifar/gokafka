@@ -9,23 +9,50 @@ import (
 // v2RecordBatchHeader writes the fixed 61-byte RecordBatch header into batch.
 func v2RecordBatchHeader(batch []byte, baseOffset int64, attributes int16, lastOffsetDelta int32) {
 	binary.BigEndian.PutUint64(batch[0:8], uint64(baseOffset))
-	batch[16] = 2 // magic
+	binary.BigEndian.PutUint32(batch[8:12], uint32(len(batch)-12)) // batchLength (bytes after this field)
+	batch[16] = 2                                                  // magic
 	binary.BigEndian.PutUint16(batch[21:23], uint16(attributes))
 	binary.BigEndian.PutUint32(batch[23:27], uint32(lastOffsetDelta))
 }
 
-// A control batch (isControl bit 0x20) must not be parsed as data; it yields a
-// single Control marker carrying the batch's absolute last offset so the
-// consumer can advance past it.
+// A control batch (isControl bit 0x20) is reported as a control batch carrying
+// the absolute last offset and no records, so the consumer can advance past it.
 func TestDecodeOneRecordBatchControlMarker(t *testing.T) {
 	batch := make([]byte, 80)
 	v2RecordBatchHeader(batch, 41, 0x20, 0)
-	recs, err := decodeOneRecordBatch("t", 3, batch)
+	info, err := decodeOneRecordBatch("t", 3, batch)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(recs) != 1 || !recs[0].Control || recs[0].Offset != 41 {
-		t.Fatalf("expected one control marker at offset 41, got %+v", recs)
+	if info == nil || !info.isControl || info.lastOffset != 41 || info.records != nil {
+		t.Fatalf("expected control batch info at offset 41, got %+v", info)
+	}
+}
+
+// decodeRecordBatch drops aborted-transaction records (matching producer id and
+// offset range) while still advancing past them via a control marker.
+func TestDecodeRecordBatchFiltersAborted(t *testing.T) {
+	// One transactional data batch at base offset 0 from producer 7.
+	batch := make([]byte, 80)
+	v2RecordBatchHeader(batch, 0, 0x10, 0)                     // isTransactional
+	binary.BigEndian.PutUint64(batch[43:51], uint64(int64(7))) // producerId field
+	// Not aborted -> delivered as data (0 records here, but not a control marker).
+	recs, err := decodeRecordBatch("t", 0, append([]byte(nil), batch...), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range recs {
+		if r.Control {
+			t.Fatalf("non-aborted transactional batch should not be a control marker")
+		}
+	}
+	// Same batch, but producer 7 is in the aborted list from offset 0.
+	recs, err = decodeRecordBatch("t", 0, append([]byte(nil), batch...), []abortedTxn{{producerID: 7, firstOffset: 0}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != 1 || !recs[0].Control {
+		t.Fatalf("aborted batch should yield only an advance marker, got %+v", recs)
 	}
 }
 

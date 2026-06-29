@@ -6,29 +6,31 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/sinamohsenifar/gokafka.svg)](https://pkg.go.dev/github.com/sinamohsenifar/gokafka)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-GoKafka is a pure Go client for Apache Kafka. It speaks the Kafka binary protocol directly using the Go standard library—no CGO, no `librdkafka`, and no third-party modules in `go.mod`.
+GoKafka is a pure Go client for Apache Kafka. It speaks the Kafka binary protocol directly using only the Go standard library — **no CGO, no `librdkafka`, and no third-party modules in `go.mod`** — so `go get` is all you need and your build stays a single static binary.
 
-The API is built around `context.Context`, functional options, and explicit error types. It targets Kafka **3.4+** and **KRaft** clusters, with negotiated API versions at connect time.
+You get a full-featured client in one module: idempotent and transactional producers, classic and next-generation (KIP-848) consumer groups, KIP-932 share groups, a broad admin API, TLS/SASL security, Schema Registry helpers, and pluggable metrics/tracing/logging. The API is built around `context.Context`, functional options, and typed errors, and negotiates protocol versions with your broker at connect time.
+
+Install:
 
 ```bash
 go get github.com/sinamohsenifar/gokafka@v0.25.0
 ```
 
-**Requirements:** Go 1.22+ · Kafka 3.4+ (KRaft recommended; 4.x is KRaft-only). CI tests Go 1.22–1.26 against Kafka 3.9.2, 4.0.2, 4.1.2, 4.2.1, and 4.3.0.
+**Requirements:** Go 1.22 or newer · Apache Kafka 3.4+ (KRaft recommended; Kafka 4.x is KRaft-only).
 
-### Supported Apache Kafka releases
+### Supported Apache Kafka versions
 
-Aligned with [Apache Kafka downloads](https://kafka.apache.org/community/downloads/):
+Every release is tested against the Kafka versions below (see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the full Go + broker matrix):
 
-| Kafka release | Support tier | CI coverage |
-|---------------|--------------|-------------|
-| **3.9.2** | LTS bridge (3.x) | Primary integration (every PR) |
-| **4.0.2** | Supported | Compatibility matrix |
-| **4.1.2** | Supported | Scheduled compatibility matrix |
-| **4.2.1** | Supported | Scheduled compatibility matrix |
-| **4.3.0** | Latest | Compatibility matrix (every PR) |
+| Kafka version | Notes |
+|---------------|-------|
+| **3.9.2** | Latest 3.x (LTS bridge) |
+| **4.0.2** | Supported |
+| **4.1.2** | Supported |
+| **4.2.1** | Supported |
+| **4.3.0** | Latest |
 
-See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for Go + broker matrix details.
+Tested on Go 1.22 through 1.26.
 
 ---
 

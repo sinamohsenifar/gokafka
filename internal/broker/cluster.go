@@ -135,28 +135,55 @@ func (c *Cluster) RefreshIfStale(ctx context.Context, topics []string, force boo
 }
 
 func (c *Cluster) refresh(ctx context.Context, topics []string) error {
-	conn, err := c.seed(ctx)
-	if err != nil {
-		return err
-	}
 	ver := c.negotiatedVersion(protocol.APIMetadata, protocol.VerMetadata)
-	resp, err := conn.Request(ctx, protocol.APIMetadata, ver, protocol.EncodeMetadataRequest(ver, topics))
-	if err != nil {
-		return err
+	body := protocol.EncodeMetadataRequest(ver, topics)
+	// If the cached seed broker has died, its connection fails here; drop it and
+	// re-dial another seed so metadata refresh survives losing the bootstrap broker.
+	var lastErr error
+	for attempt := 0; attempt <= len(c.Seeds); attempt++ {
+		conn, err := c.seed(ctx)
+		if err != nil {
+			return err
+		}
+		resp, err := conn.Request(ctx, protocol.APIMetadata, ver, body)
+		if err != nil {
+			c.dropSeed(conn)
+			lastErr = err
+			continue
+		}
+		respBody, err := transport.ResponseBodyForAPI(resp, protocol.APIMetadata, ver)
+		if err != nil {
+			c.dropSeed(conn)
+			lastErr = err
+			continue
+		}
+		meta, err := protocol.DecodeMetadataResponse(ver, respBody)
+		if err != nil {
+			return err
+		}
+		c.mu.Lock()
+		c.meta = meta
+		c.leaderIndex = buildLeaderIndex(meta)
+		c.mu.Unlock()
+		return nil
 	}
-	body, err := transport.ResponseBodyForAPI(resp, protocol.APIMetadata, ver)
-	if err != nil {
-		return err
+	if lastErr == nil {
+		lastErr = fmt.Errorf("broker: metadata refresh failed")
 	}
-	meta, err := protocol.DecodeMetadataResponse(ver, body)
-	if err != nil {
-		return err
-	}
+	return lastErr
+}
+
+// dropSeed closes and clears the cached seed connection so the next seed() call
+// re-dials a (possibly different, live) broker.
+func (c *Cluster) dropSeed(conn *transport.Conn) {
 	c.mu.Lock()
-	c.meta = meta
-	c.leaderIndex = buildLeaderIndex(meta)
+	if c.seedConn == conn {
+		c.seedConn = nil
+	}
 	c.mu.Unlock()
-	return nil
+	if conn != nil {
+		_ = conn.Close()
+	}
 }
 
 func buildLeaderIndex(meta protocol.MetadataResponse) map[string]map[int32]int32 {
