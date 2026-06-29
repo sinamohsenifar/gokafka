@@ -146,7 +146,8 @@ Schema-ID pinning / allow-list on decode is supported (`ExpectedSchemaID`,
 | `GET /subjects`, `GET /subjects/{s}/versions[/{v}]` | ✅ (`ListSubjects` / `ListVersions` / `SchemaByVersion`) |
 | soft/hard delete | ✅ (`DeleteSubject` / `DeleteSubjectVersion`, `permanent` flag) |
 | `TopicNameStrategy` subject naming helper | ✅ (`SubjectForTopic`) |
-| `POST /subjects/{subject}` (is-registered) / `/mode` | ❌ (minor) |
+| `POST /subjects/{subject}` (is-registered probe) | ✅ (`IsRegistered`) |
+| `GET/PUT /mode[/{subject}]` (registry mode) | ✅ (`Mode` / `SetMode`; Confluent-specific — ccompat layers may return "not supported") |
 
 The Schema Registry client covers the produce/consume serde path **and** schema
 lifecycle management (compatibility checks, config, version listing, deletes).
@@ -181,7 +182,7 @@ lifecycle management (compatibility checks, config, version listing, deletes).
 3. **KIP-714 client metrics** — `GetTelemetrySubscriptions` / `PushTelemetry`.
 4. **Newer API revisions** — Fetch v13+ (topic IDs), ShareAcknowledge v2 (`RENEW`), OffsetFetch v8 (batched multi-group). (FindCoordinator flex v3 and OffsetFetch flex v6 done.)
 5. _(Consumer niceties closed: KIP-1106 `WithConsumeSince`, KIP-390 `WithProducerCompressionLevel`, KIP-848 RE2J `ConsumerPattern`.)_
-6. **Schema Registry** — remaining minor endpoints (`/mode`, is-registered probe).
+6. _(Schema Registry lifecycle complete: register/get, compatibility, config, versions, delete, `IsRegistered`, `Mode`/`SetMode`.)_
 
 ---
 
