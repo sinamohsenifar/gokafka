@@ -13,7 +13,8 @@ type RequestHeader struct {
 }
 
 func EncodeRequest(h RequestHeader, body []byte) []byte {
-	buf := wire.NewBuffer(len(body) + 32)
+	buf := wire.NewBuffer(len(body) + 36)
+	buf.B = append(buf.B, 0, 0, 0, 0) // reserved length prefix, back-patched below
 	buf.WriteInt16(h.APIKey)
 	buf.WriteInt16(h.APIVersion)
 	buf.WriteInt32(h.CorrelationID)
@@ -25,7 +26,9 @@ func EncodeRequest(h RequestHeader, body []byte) []byte {
 		buf.WriteString(h.ClientID)
 	}
 	buf.B = append(buf.B, body...)
-	return wire.PrependLength(buf.Bytes())
+	out := buf.Bytes()
+	wire.PatchLength(out)
+	return out
 }
 
 // RequestHeaderVersion returns the Kafka request header version for an API call.

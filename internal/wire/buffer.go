@@ -353,3 +353,14 @@ func PrependLength(body []byte) []byte {
 	copy(out[4:], body)
 	return out
 }
+
+// PatchLength back-patches the Kafka int32 size field into the first 4 bytes of
+// frame (which must have been reserved as a placeholder), avoiding the extra
+// allocation and copy of PrependLength. The size covers everything after the
+// 4-byte prefix.
+func PatchLength(frame []byte) {
+	if len(frame) < 4 {
+		return
+	}
+	binary.BigEndian.PutUint32(frame, uint32(len(frame)-4))
+}

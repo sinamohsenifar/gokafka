@@ -73,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **Request framing** reserves the 4-byte length prefix up front and back-patches it (`wire.PatchLength`) instead of allocating a new buffer and copying the whole request body (`PrependLength`). Removes one full-request copy from every request sent.
 - **Record batch encode** writes each record directly into the batch buffer with a pre-computed length instead of allocating a scratch buffer per record and copying. A 1000-record batch dropped from ~1048 allocations to ~29 (~36×), with ~22% lower latency and ~28% less memory; single-record encode is also faster with fewer allocations. The batch buffer is pre-sized to its exact length, so it allocates once.
 - Added a benchmark suite (produce encode single/batch, wire primitives) — the module previously had none, so allocation regressions were invisible.
 - Idempotent producer sequence state keys its map by a `{topic, partition}` struct instead of an `fmt.Sprintf` string, removing a per-record allocation on the idempotent send path.
