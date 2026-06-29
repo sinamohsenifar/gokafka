@@ -10,6 +10,11 @@ var ErrUnknownTopic = errors.New("protocol: unknown topic or partition")
 // ErrRebalanceInProgress indicates the consumer group is rebalancing.
 var ErrRebalanceInProgress = errors.New("protocol: rebalance in progress")
 
+// ErrLeaderEpochChanged indicates a fetch hit a stale/changed partition leader
+// (NOT_LEADER_OR_FOLLOWER, FENCED_LEADER_EPOCH, UNKNOWN_LEADER_EPOCH); the caller
+// should refresh metadata and retry. KIP-320.
+var ErrLeaderEpochChanged = errors.New("protocol: partition leader or epoch changed")
+
 // ErrMemberIDRequired is returned when the broker assigns a member id (KIP-394); retry JoinGroup with that id.
 var ErrMemberIDRequired = errors.New("protocol: member id required")
 

@@ -72,6 +72,7 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 		}
 		byNode[b.NodeID] = append(byNode[b.NodeID], protocol.FetchPartition{
 			Topic: a.topic, Partition: a.partition, Offset: a.offset, MaxBytes: 1 << 20,
+			LeaderEpoch: c.client.cluster.LeaderEpoch(a.topic, a.partition),
 		})
 	}
 
@@ -90,6 +91,10 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 		if err != nil {
 			if errors.Is(err, protocol.ErrRebalanceInProgress) {
 				return c.handleFetchRebalance(ctx)
+			}
+			if errors.Is(err, protocol.ErrLeaderEpochChanged) {
+				_ = c.client.cluster.Refresh(ctx, c.topics)
+				return nil, nil
 			}
 			return nil, err
 		}
@@ -114,6 +119,10 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 		if f.err != nil {
 			if errors.Is(f.err, protocol.ErrRebalanceInProgress) {
 				return c.handleFetchRebalance(ctx)
+			}
+			if errors.Is(f.err, protocol.ErrLeaderEpochChanged) {
+				_ = c.client.cluster.Refresh(ctx, c.topics)
+				return nil, nil
 			}
 			return nil, f.err
 		}

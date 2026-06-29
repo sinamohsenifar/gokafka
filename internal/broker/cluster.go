@@ -61,13 +61,14 @@ type Cluster struct {
 	Security auth.Config
 	Opts     Options
 
-	mu              sync.RWMutex
-	meta            protocol.MetadataResponse
-	leaderIndex     map[string]map[int32]int32 // topic -> partition -> broker node id
-	metaRefreshedAt time.Time
-	conns           map[int32]*transport.Conn
-	seedConn        *transport.Conn
-	apiVersions     map[int16]int16
+	mu               sync.RWMutex
+	meta             protocol.MetadataResponse
+	leaderIndex      map[string]map[int32]int32 // topic -> partition -> broker node id
+	leaderEpochIndex map[string]map[int32]int32 // topic -> partition -> leader epoch (-1 unknown)
+	metaRefreshedAt  time.Time
+	conns            map[int32]*transport.Conn
+	seedConn         *transport.Conn
+	apiVersions      map[int16]int16
 }
 
 func New(seeds []string, clientID string, sec auth.Config, opts Options) *Cluster {
@@ -164,6 +165,7 @@ func (c *Cluster) refresh(ctx context.Context, topics []string) error {
 		c.mu.Lock()
 		c.meta = meta
 		c.leaderIndex = buildLeaderIndex(meta)
+		c.leaderEpochIndex = buildLeaderEpochIndex(meta)
 		c.mu.Unlock()
 		return nil
 	}
@@ -196,6 +198,31 @@ func buildLeaderIndex(meta protocol.MetadataResponse) map[string]map[int32]int32
 		out[t.Name] = parts
 	}
 	return out
+}
+
+func buildLeaderEpochIndex(meta protocol.MetadataResponse) map[string]map[int32]int32 {
+	out := make(map[string]map[int32]int32, len(meta.Topics))
+	for _, t := range meta.Topics {
+		parts := make(map[int32]int32, len(t.Partitions))
+		for _, p := range t.Partitions {
+			parts[p.Partition] = p.LeaderEpoch
+		}
+		out[t.Name] = parts
+	}
+	return out
+}
+
+// LeaderEpoch returns the current leader epoch for a partition, or -1 if unknown
+// (used as Fetch current_leader_epoch for KIP-320 stale-leader fencing).
+func (c *Cluster) LeaderEpoch(topic string, partition int32) int32 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if parts, ok := c.leaderEpochIndex[topic]; ok {
+		if e, ok := parts[partition]; ok {
+			return e
+		}
+	}
+	return -1
 }
 
 // LeaderNodeID returns the broker node id leading a topic partition.

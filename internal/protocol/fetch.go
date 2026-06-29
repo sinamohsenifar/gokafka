@@ -9,10 +9,11 @@ import (
 )
 
 type FetchPartition struct {
-	Topic     string
-	Partition int32
-	Offset    int64
-	MaxBytes  int32
+	Topic       string
+	Partition   int32
+	Offset      int64
+	LeaderEpoch int32 // current_leader_epoch (-1 = unknown / no fencing)
+	MaxBytes    int32
 }
 
 type FetchedRecord struct {
@@ -66,7 +67,7 @@ func encodeFetchRequestLegacy(ver int16, partitions []FetchPartition, maxWaitMs,
 		for _, p := range parts {
 			buf.WriteInt32(p.Partition)
 			if ver >= 9 {
-				buf.WriteInt32(-1)
+				buf.WriteInt32(p.LeaderEpoch) // current_leader_epoch
 			}
 			buf.WriteInt64(p.Offset)
 			if ver >= 5 {
@@ -113,7 +114,7 @@ func encodeFetchRequestFlex(ver int16, partitions []FetchPartition, maxWaitMs, m
 		buf.WriteCompactArrayLen(len(parts))
 		for _, p := range parts {
 			buf.WriteInt32(p.Partition)
-			buf.WriteInt32(-1) // current_leader_epoch
+			buf.WriteInt32(p.LeaderEpoch) // current_leader_epoch
 			buf.WriteInt64(p.Offset)
 			if ver >= 12 {
 				buf.WriteInt32(-1) // last_fetched_epoch
@@ -183,6 +184,9 @@ func decodeFetchResponseLegacy(ver int16, body []byte) ([]FetchedRecord, error) 
 			}
 			if errCode == 27 {
 				return nil, ErrRebalanceInProgress
+			}
+			if errCode == 6 || errCode == 74 || errCode == 75 {
+				return nil, ErrLeaderEpochChanged
 			}
 			if errCode != 0 {
 				return nil, fmt.Errorf("protocol: fetch partition error %d", errCode)
@@ -287,6 +291,9 @@ func decodeFetchResponseFlex(ver int16, body []byte) ([]FetchedRecord, error) {
 			}
 			if errCode == 27 {
 				return nil, ErrRebalanceInProgress
+			}
+			if errCode == 6 || errCode == 74 || errCode == 75 {
+				return nil, ErrLeaderEpochChanged
 			}
 			if errCode != 0 {
 				return nil, fmt.Errorf("protocol: fetch partition error %d", errCode)

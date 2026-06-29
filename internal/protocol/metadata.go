@@ -17,6 +17,7 @@ type PartitionMeta struct {
 	Topic       string
 	Partition   int32
 	Leader      int32
+	LeaderEpoch int32 // -1 when the broker does not report it (metadata < v7)
 	Replicas    []int32
 	ISR         []int32
 	OfflineRepl []int32
@@ -145,8 +146,9 @@ func decodeMetadataResponseFlex(version int16, body []byte) (MetadataResponse, e
 			if err != nil {
 				return MetadataResponse{}, err
 			}
+			leaderEpoch := int32(-1)
 			if version >= 7 {
-				if _, err := buf.ReadInt32(); err != nil { // leader_epoch
+				if leaderEpoch, err = buf.ReadInt32(); err != nil { // leader_epoch
 					return MetadataResponse{}, err
 				}
 			}
@@ -163,7 +165,7 @@ func decodeMetadataResponseFlex(version int16, body []byte) (MetadataResponse, e
 				return MetadataResponse{}, err
 			}
 			tm.Partitions = append(tm.Partitions, PartitionMeta{
-				Topic: name, Partition: partID, Leader: leader,
+				Topic: name, Partition: partID, Leader: leader, LeaderEpoch: leaderEpoch,
 				Replicas: replicas, ISR: isr, OfflineRepl: offline, ErrorCode: pErr,
 			})
 			if err := buf.SkipTagSection(); err != nil {
@@ -335,7 +337,8 @@ func decodeMetadataResponseLegacy(body []byte) (MetadataResponse, error) {
 			if err != nil {
 				return MetadataResponse{}, err
 			}
-			if _, err := buf.ReadInt32(); err != nil { // leader_epoch
+			leaderEpoch, err := buf.ReadInt32() // leader_epoch
+			if err != nil {
 				return MetadataResponse{}, err
 			}
 			replicas, err := readInt32Array(buf)
@@ -351,7 +354,7 @@ func decodeMetadataResponseLegacy(body []byte) (MetadataResponse, error) {
 				return MetadataResponse{}, err
 			}
 			tm.Partitions = append(tm.Partitions, PartitionMeta{
-				Topic: name, Partition: partID, Leader: leader,
+				Topic: name, Partition: partID, Leader: leader, LeaderEpoch: leaderEpoch,
 				Replicas: replicas, ISR: isr, OfflineRepl: offline, ErrorCode: pErr,
 			})
 		}

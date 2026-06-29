@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.4] - 2026-06-29
+
+### Added
+
+- **Leader-epoch fencing (KIP-320)** — Fetch requests now carry `current_leader_epoch` (captured per partition from metadata) instead of `-1`, so the broker fences reads against a stale partition leader after a leader change. On `NOT_LEADER_OR_FOLLOWER` / `FENCED_LEADER_EPOCH` / `UNKNOWN_LEADER_EPOCH` the consumer refreshes metadata and retries. (Full log-truncation detection via the OffsetForLeaderEpoch API remains a follow-up.) Verified against a 3-broker cluster with partition-leader failover.
+
 ## [0.25.3] - 2026-06-29
 
 ### Added

@@ -73,7 +73,7 @@ the broker at connect time, so a lower client ceiling still interoperates.
 
 | Key | API | Relevance | Priority |
 |----:|-----|-----------|----------|
-| 23 | OffsetForLeaderEpoch | KIP-320 log-truncation / unclean-leader detection via leader epoch | **Medium** (robustness on unclean failover) |
+| 23 | OffsetForLeaderEpoch | KIP-320 log-truncation detection (fencing already done: Fetch sends `current_leader_epoch`) | **Medium** (truncation detection on unclean failover) |
 | 71/72 | GetTelemetrySubscriptions / PushTelemetry | KIP-714 client metrics push (broker only advertises if a telemetry reporter is configured) | **Medium** (observability) |
 | 50 | DescribeUserScramCredentials | Read SCRAM creds (we implement Alter=51, not Describe) | Low (admin completeness) |
 | 75 | DescribeTopicPartitions | KIP-966 cursor-based metadata for very large clusters | Low (Metadata API 3 still works) |
@@ -107,7 +107,7 @@ internals), 88/89 Streams groups (KIP-1071).
 | KIP-1106 | Duration-based `auto.offset.reset` | ❌ (earliest/latest only) |
 | KIP-390 | Configurable producer compression level | ❌ (codec selectable; level not) |
 | KIP-848 RE2J | Server-side regex subscription (`SubscriptionPattern`) | ❌ (explicit topic list only) |
-| KIP-320 | Fetch/list-offset leader-epoch fencing | ❌ (see API 23 above) |
+| KIP-320 | Leader-epoch fencing | ➖ (Fetch sends `current_leader_epoch` from metadata and refreshes+retries on NOT_LEADER/FENCED/UNKNOWN_LEADER_EPOCH; full truncation detection via OffsetForLeaderEpoch API 23 is a follow-up) |
 | KIP-1139 / KIP-1258 | OAuth `jwt-bearer` grant / client-assertion | ➖ (token provider is pluggable; specific grants are caller-supplied) |
 
 Server-side / interop-only (a client does not implement): KIP-405 tiered storage,
@@ -175,7 +175,7 @@ lifecycle management (compatibility checks, config, version listing, deletes).
 
 ## 5. Prioritized gaps (roadmap)
 
-1. **OffsetForLeaderEpoch (KIP-320)** — track leader epochs and detect truncation on unclean leader election.
+1. **OffsetForLeaderEpoch (KIP-320)** — leader-epoch *fencing* on Fetch is done; remaining: full *truncation detection* (query OffsetForLeaderEpoch API 23 on leader change) and committed-leader-epoch on offset commit/fetch.
 2. **KIP-890 transactions v2** — adopt Produce v10+ and the newer Add/EndTxn flow.
 3. **KIP-714 client metrics** — `GetTelemetrySubscriptions` / `PushTelemetry`.
 4. **Newer API revisions** — Fetch v13+ (topic IDs), FindCoordinator v3+/batched, ShareAcknowledge v2 (`RENEW`), OffsetFetch v8+.
