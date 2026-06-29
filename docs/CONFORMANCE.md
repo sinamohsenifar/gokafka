@@ -26,7 +26,7 @@ the broker at connect time, so a lower client ceiling still interoperates.
 | 2 | ListOffsets | 3 | 11 | ➖ (no current-leader-epoch, v4+) |
 | 3 | Metadata | 12 | 13 | ✅ |
 | 8 | OffsetCommit | 8 | 10 | ➖ |
-| 9 | OffsetFetch | 5 | 10 | ➖ (no batched multi-group, v8+) |
+| 9 | OffsetFetch | 6 | 10 | ➖ (flexible v6; not v8 batched multi-group) |
 | 10 | FindCoordinator | 3 | 6 | ✅ (flexible/tagged-fields; single-key, not v4 batched) |
 | 11 | JoinGroup | 6 | 9 | ➖ |
 | 12 | Heartbeat | 4 | 4 | ✅ |
@@ -178,7 +178,7 @@ lifecycle management (compatibility checks, config, version listing, deletes).
 1. **OffsetForLeaderEpoch (KIP-320)** — leader-epoch *fencing* on Fetch is done; remaining: full *truncation detection* (query OffsetForLeaderEpoch API 23 on leader change) and committed-leader-epoch on offset commit/fetch.
 2. **KIP-890 transactions v2** — adopt Produce v10+ and the newer Add/EndTxn flow.
 3. **KIP-714 client metrics** — `GetTelemetrySubscriptions` / `PushTelemetry`.
-4. **Newer API revisions** — Fetch v13+ (topic IDs), ShareAcknowledge v2 (`RENEW`), OffsetFetch v8+. (FindCoordinator is now flexible v3.)
+4. **Newer API revisions** — Fetch v13+ (topic IDs), ShareAcknowledge v2 (`RENEW`), OffsetFetch v8 (batched multi-group). (FindCoordinator flex v3 and OffsetFetch flex v6 done.)
 5. _(Consumer niceties closed: KIP-1106 `WithConsumeSince`, KIP-390 `WithProducerCompressionLevel`, KIP-848 RE2J `ConsumerPattern`.)_
 6. **Schema Registry** — remaining minor endpoints (`/mode`, is-registered probe).
 

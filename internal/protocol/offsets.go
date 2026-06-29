@@ -47,6 +47,9 @@ func encodeOffsetFetchRequestLegacy(group string, parts []OffsetFetchPartition) 
 }
 
 func encodeOffsetFetchRequestFlex(group string, parts []OffsetFetchPartition) []byte {
+	// OffsetFetch request v6 (flexible): group_id, topics[name, partition_indexes[]],
+	// request tag. partition_indexes is a primitive int32 array (no per-element
+	// tag); each topic struct has a trailing tag. (require_stable is v7+ only.)
 	buf := wire.NewBuffer(64)
 	buf.WriteCompactString(group)
 	topics := map[string][]int32{}
@@ -64,12 +67,10 @@ func encodeOffsetFetchRequestFlex(group string, parts []OffsetFetchPartition) []
 		buf.WriteCompactArrayLen(len(partsForTopic))
 		for _, part := range partsForTopic {
 			buf.WriteInt32(part)
-			buf.WriteEmptyTagSection()
 		}
+		buf.WriteEmptyTagSection() // topic struct tag
 	}
-	buf.WriteCompactNullableString(nil)
-	buf.WriteBool(false)
-	buf.WriteEmptyTagSection()
+	buf.WriteEmptyTagSection() // request tag
 	return buf.Bytes()
 }
 
@@ -185,12 +186,18 @@ func decodeOffsetFetchResponseFlex(body []byte) ([]CommittedOffset, error) {
 				Topic: topic, Partition: part, Offset: off,
 				Metadata: meta, ErrorCode: errCode,
 			})
-			if err := buf.SkipTagSection(); err != nil {
+			if err := buf.SkipTagSection(); err != nil { // partition struct tag
 				return nil, err
 			}
 		}
+		if err := buf.SkipTagSection(); err != nil { // topic struct tag
+			return nil, err
+		}
 	}
-	if err := buf.SkipTagSection(); err != nil {
+	if _, err := buf.ReadInt16(); err != nil { // group-level error_code (v2+)
+		return nil, err
+	}
+	if err := buf.SkipTagSection(); err != nil { // response tag
 		return nil, err
 	}
 	return out, nil

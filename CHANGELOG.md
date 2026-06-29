@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.12] - 2026-06-29
+
+### Changed
+
+- **OffsetFetch upgraded to flexible v6** (from v5). Fixed the previously-unused flex request encoder (dropped spurious fields, corrected per-topic vs per-partition tag sections) and the flex response decoder (added the per-topic tag section and the top-level group error code). v6 is supported on all Kafka 3.4+ targets and is exercised by consumer offset-init, commit-fetch, and transactional offset paths.
+
 ## [0.25.11] - 2026-06-29
 
 ### Changed
