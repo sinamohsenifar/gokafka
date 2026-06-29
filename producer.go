@@ -88,7 +88,7 @@ func (p *Producer) ensureProducerID(ctx context.Context) error {
 	}
 	body := protocol.EncodeInitProducerID(txnPtr, p.client.cfg.transactionTimeoutMs())
 	var pid protocol.ProducerID
-	err := retryRetriable(ctx, p.client.cfg.Retry, func() error {
+	err := retryRetriable(ctx, coordinatorRetry(p.client.cfg.Retry), func() error {
 		var coord int32
 		var err error
 		if txnID != "" {
@@ -126,6 +126,26 @@ func (p *Producer) ensureProducerID(ctx context.Context) error {
 	p.idState = produce.NewState(pid)
 	p.pidReady = true
 	return nil
+}
+
+// coordinatorRetry returns a retry policy patient enough to wait out a
+// transaction/group coordinator that is still loading or being elected right
+// after broker startup (errors COORDINATOR_LOAD_IN_PROGRESS / NOT_COORDINATOR /
+// COORDINATOR_NOT_AVAILABLE). The default 3-attempt policy gives up in ~300ms,
+// which is too short for a freshly started cluster. The overall wait stays
+// bounded by the caller's context.
+func coordinatorRetry(base RetryConfig) RetryConfig {
+	r := base
+	if r.MaxAttempts < 25 {
+		r.MaxAttempts = 25
+	}
+	if r.Backoff <= 0 {
+		r.Backoff = 200 * time.Millisecond
+	}
+	if r.MaxBackoff <= 0 || r.MaxBackoff > time.Second {
+		r.MaxBackoff = time.Second
+	}
+	return r
 }
 
 func (p *Producer) resetProducerID() {

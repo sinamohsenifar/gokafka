@@ -50,7 +50,10 @@ func (p *Producer) BeginTransaction(ctx context.Context) (*TransactionalProducer
 func (t *TransactionalProducer) init(ctx context.Context) error {
 	body := protocol.EncodeInitProducerID(&t.txnID, t.client.cfg.transactionTimeoutMs())
 	var pid protocol.ProducerID
-	err := retryRetriable(ctx, t.client.cfg.Retry, func() error {
+	// Patient retry: the transaction coordinator may still be loading
+	// __transaction_state right after broker startup (COORDINATOR_LOAD_IN_PROGRESS
+	// / NOT_COORDINATOR / COORDINATOR_NOT_AVAILABLE).
+	err := retryRetriable(ctx, coordinatorRetry(t.client.cfg.Retry), func() error {
 		coord, err := t.client.cluster.TransactionCoordinator(ctx, t.txnID)
 		if err != nil {
 			return err
@@ -163,18 +166,36 @@ func (t *TransactionalProducer) SendOffsetsToTxn(ctx context.Context, groupID st
 		txnVer = 3
 	}
 	body := protocol.EncodeTxnOffsetCommit(txnVer, t.txnID, groupID, t.pid.ID, t.pid.Epoch, meta, committed)
-	rb, err := t.client.cluster.Request(ctx, t.coordinator, protocol.APITxnOffsetCommit, txnVer, body)
-	if err != nil {
-		return fmt.Errorf("txn offset commit request: %w", err)
-	}
-	code, err := protocol.DecodeTxnOffsetCommit(txnVer, rb)
-	if err != nil {
-		return fmt.Errorf("txn offset commit response: %w", err)
-	}
-	if code != 0 {
-		return newKafkaError(code, "", 0, "txn offset commit failed")
-	}
-	return nil
+	return t.txnCoordRequest(ctx, protocol.APITxnOffsetCommit, txnVer, body,
+		func(rb []byte) (int16, error) { return protocol.DecodeTxnOffsetCommit(txnVer, rb) },
+		"txn offset commit failed")
+}
+
+// txnCoordRequest sends a request to the transaction coordinator and retries
+// patiently while the coordinator is loading or being re-elected at startup,
+// re-resolving the coordinator on coordinator-retriable errors. decode returns
+// the response's top-level error code.
+func (t *TransactionalProducer) txnCoordRequest(ctx context.Context, apiKey, ver int16, body []byte, decode func([]byte) (int16, error), what string) error {
+	return retryRetriable(ctx, coordinatorRetry(t.client.cfg.Retry), func() error {
+		rb, err := t.client.cluster.Request(ctx, t.coordinator, apiKey, ver, body)
+		if err != nil {
+			return err
+		}
+		code, err := decode(rb)
+		if err != nil {
+			return err
+		}
+		if code != 0 {
+			if protocol.CoordinatorRetriable(code) {
+				t.client.cluster.Invalidate(t.coordinator)
+				if c, e := t.client.cluster.TransactionCoordinator(ctx, t.txnID); e == nil {
+					t.coordinator = c
+				}
+			}
+			return newKafkaError(code, "", 0, what)
+		}
+		return nil
+	})
 }
 
 func (t *TransactionalProducer) ensureGroupOffsets(ctx context.Context, groupID string) error {
@@ -183,16 +204,10 @@ func (t *TransactionalProducer) ensureGroupOffsets(ctx context.Context, groupID 
 	}
 	addVer := t.client.cluster.NegotiatedVersion(protocol.APIAddOffsetsToTxn, protocol.VerAddOffsetsToTxn)
 	body := protocol.EncodeAddOffsetsToTxn(addVer, t.txnID, t.pid.ID, t.pid.Epoch, groupID)
-	rb, err := t.client.cluster.Request(ctx, t.coordinator, protocol.APIAddOffsetsToTxn, addVer, body)
-	if err != nil {
-		return fmt.Errorf("add offsets to transaction (ver=%d): %w", addVer, err)
-	}
-	code, err := protocol.DecodeAddOffsetsToTxn(addVer, rb)
-	if err != nil {
+	if err := t.txnCoordRequest(ctx, protocol.APIAddOffsetsToTxn, addVer, body,
+		func(rb []byte) (int16, error) { return protocol.DecodeAddOffsetsToTxn(addVer, rb) },
+		"add offsets to transaction failed"); err != nil {
 		return err
-	}
-	if code != 0 {
-		return newKafkaError(code, "", 0, "add offsets to transaction failed")
 	}
 	t.registeredGroups[groupID] = struct{}{}
 	return nil
@@ -232,18 +247,9 @@ func (t *TransactionalProducer) ensurePartitions(ctx context.Context, records []
 
 func (t *TransactionalProducer) addPartitions(ctx context.Context, topics []protocol.TxnTopicPartitions) error {
 	body := protocol.EncodeAddPartitionsToTxn(t.txnID, t.pid.ID, t.pid.Epoch, topics)
-	rb, err := t.client.cluster.Request(ctx, t.coordinator, protocol.APIAddPartitionsTxn, protocol.VerAddPartitionsTxn, body)
-	if err != nil {
-		return err
-	}
-	code, err := protocol.DecodeAddPartitionsToTxn(rb)
-	if err != nil {
-		return err
-	}
-	if code != 0 {
-		return newKafkaError(code, "", 0, "add partitions to transaction failed")
-	}
-	return nil
+	return t.txnCoordRequest(ctx, protocol.APIAddPartitionsTxn, protocol.VerAddPartitionsTxn, body,
+		func(rb []byte) (int16, error) { return protocol.DecodeAddPartitionsToTxn(rb) },
+		"add partitions to transaction failed")
 }
 
 // Commit commits the transaction.
@@ -265,16 +271,10 @@ func (t *TransactionalProducer) endTxn(ctx context.Context, commit bool) error {
 		return ErrTransactionAborted
 	}
 	body := protocol.EncodeEndTxn(t.txnID, t.pid.ID, t.pid.Epoch, commit)
-	rb, err := t.client.cluster.Request(ctx, t.coordinator, protocol.APIEndTxn, protocol.VerEndTxn, body)
-	if err != nil {
+	if err := t.txnCoordRequest(ctx, protocol.APIEndTxn, protocol.VerEndTxn, body,
+		func(rb []byte) (int16, error) { return protocol.DecodeEndTxn(rb) },
+		"end transaction failed"); err != nil {
 		return err
-	}
-	code, err := protocol.DecodeEndTxn(rb)
-	if err != nil {
-		return err
-	}
-	if code != 0 {
-		return newKafkaError(code, "", 0, "end transaction failed")
 	}
 	t.open = false
 	if !commit {
