@@ -179,7 +179,34 @@ lifecycle management (compatibility checks, config, version listing, deletes).
 2. **KIP-890 transactions v2** — adopt Produce v10+ and the newer Add/EndTxn flow.
 3. **KIP-714 client metrics** — `GetTelemetrySubscriptions` / `PushTelemetry`.
 4. **Newer API revisions** — Fetch v13+ (topic IDs), FindCoordinator v3+/batched, ShareAcknowledge v2 (`RENEW`), OffsetFetch v8+.
-5. **Consumer niceties** — duration-based `auto.offset.reset` (KIP-1106), server-side regex subscriptions (KIP-848 RE2J), configurable compression level (KIP-390).
+5. **Consumer niceties** — server-side regex subscriptions (KIP-848 RE2J), configurable compression level (KIP-390). (Duration-based `auto.offset.reset` / KIP-1106 is ✅ via `WithConsumeSince`.)
 6. **Schema Registry** — remaining minor endpoints (`/mode`, is-registered probe).
 
-_Generated from a verification pass against Apache Kafka 4.3 and Confluent Schema Registry docs._
+---
+
+## 6. Hardening vs known client bug classes (cross-library audit)
+
+Synthesized from the GitHub issue trackers and changelogs of franz-go, IBM/sarama,
+segmentio/kafka-go, and confluent-kafka-go/librdkafka — the recurring client
+correctness bugs and how GoKafka guards against each.
+
+| # | Bug class (seen across libraries) | GoKafka guard | Status |
+|---|-----------------------------------|---------------|:------:|
+| 1 | Deadlock/hang on `Close` | `Close` closes pooled conns; consumer/share heartbeat goroutines cancelled via context; async producer `Close` is `sync.Once`-idempotent | ✅ |
+| 2 | Offset-commit / rebalance generation race | Rejoin on `REBALANCE_IN_PROGRESS` / illegal generation; commit backoff is context-aware; partial commit never advances uncommitted partitions | ✅ |
+| 3 | Stale-message replay after rebalance | Absolute record offsets; control-marker offset advance; cooperative incremental revoke/assign | ✅ (buffered-drop test recommended) |
+| 4 | Idempotent producer `OUT_OF_ORDER_SEQUENCE` / fatal under churn | Reset producer id on `INVALID_PRODUCER_EPOCH` / `OUT_OF_ORDER_SEQUENCE`; per-partition sequence map mutex-guarded; rollback on partial failure | ✅ |
+| 5 | Producer hang on `NOT_LEADER` + metadata churn | Produce retries refresh metadata; transport errors retriable; patient bounded retry | ✅ |
+| 6 | Transaction coordinator fencing / hanging txn | Patient coordinator retry; `CONCURRENT_TRANSACTIONS` retriable; all coordinator ops context-bounded | ✅ (transactions v1) |
+| 7 | Metadata refresh storms / `NOT_LEADER` loops | TTL-gated refresh, topic-scoped, capped backoff, seed failover | ✅ |
+| 8 | Leader-epoch / log-truncation | Fetch sends `current_leader_epoch`; refresh+retry on FENCED/UNKNOWN/NOT_LEADER; transport EOF treated as retriable (not truncation) | ➖ (fencing ✅; full truncation detection via OffsetForLeaderEpoch is a follow-up) |
+| 9 | Fetch decompression edge cases (lz4/zstd) | Decompression errors surfaced (never swallowed); decompressed-size cap; reject non-v2 (magic≠2) batches | ✅ |
+| 10 | Connection / goroutine leak on failover | Dead seed connection dropped+closed; `Invalidate` closes per-broker conns; `Close` joins goroutines | ✅ (leak-loop test recommended) |
+| 11 | Record loss on auto-commit / unclean shutdown | Commit advances only acked records; partial commit doesn't advance uncommitted | ✅ |
+| 12 | Large-message handling | Per-partition broker error code surfaced as typed `*KafkaError` (e.g. `MESSAGE_TOO_LARGE`) | ✅ |
+
+GoKafka already has regression tests for several of these (read_committed aborted
+filtering, leader-epoch failover, seed failover, coordinator startup retries).
+Items marked "test recommended" are guarded by design but lack a dedicated test.
+
+_Generated from a verification pass against Apache Kafka 4.3, Confluent Schema Registry docs, and a cross-library GitHub-issue audit._

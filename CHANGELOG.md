@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.6] - 2026-06-29
+
+### Added
+
+- **Duration-based offset reset (KIP-1106)** — `WithConsumeSince(d)` resets a group with no committed offset to the earliest record at or after `now - d` (via ListOffsets-by-timestamp), and a `Consumer.SeekToTime` method. Integration-tested (records older than the window are skipped).
+- **Cross-library hardening audit** — docs/CONFORMANCE.md now maps the 12 recurring client bug classes found across franz-go / sarama / kafka-go / confluent-kafka-go issue trackers to GoKafka's guards (Close deadlock, commit/generation race, idempotent reset, leader-epoch, decompression, connection leaks, record loss, etc.).
+
 ## [0.25.5] - 2026-06-29
 
 ### Added
