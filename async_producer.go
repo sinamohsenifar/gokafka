@@ -15,14 +15,13 @@ type ProduceResult struct {
 
 // AsyncProducer sends records concurrently via a buffered channel.
 type AsyncProducer struct {
-	client      *Client
-	prod        *Producer
-	in          chan Record
-	out         chan ProduceResult
-	wg          sync.WaitGroup
-	once        sync.Once
-	closed      chan struct{}
-	partitioner Partitioner
+	client *Client
+	prod   *Producer
+	in     chan Record
+	out    chan ProduceResult
+	wg     sync.WaitGroup
+	once   sync.Once
+	closed chan struct{}
 }
 
 // NewAsyncProducer creates a producer with worker pool. Call Run to start workers.
@@ -32,12 +31,11 @@ func (c *Client) NewAsyncProducer() *AsyncProducer {
 		buf = 256
 	}
 	return &AsyncProducer{
-		client:      c,
-		prod:        c.Producer(),
-		in:          make(chan Record, buf),
-		out:         make(chan ProduceResult, buf),
-		closed:      make(chan struct{}),
-		partitioner: partitionerFromConfig(c.cfg.Producer),
+		client: c,
+		prod:   c.Producer(),
+		in:     make(chan Record, buf),
+		out:    make(chan ProduceResult, buf),
+		closed: make(chan struct{}),
 	}
 }
 
@@ -49,7 +47,6 @@ func (a *AsyncProducer) Results() <-chan ProduceResult { return a.out }
 
 // Run starts producer workers until ctx is cancelled.
 func (a *AsyncProducer) Run(ctx context.Context) {
-	a.prod.partitioner = a.partitioner
 	workers := a.client.cfg.Concurrency.ProducerWorkers
 	for i := 0; i < workers; i++ {
 		a.wg.Add(1)

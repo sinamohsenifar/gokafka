@@ -24,6 +24,7 @@ type ShareConsumer struct {
 	assignments  []shareAssignment
 	shareSession map[int32]int32 // broker node -> session epoch
 	hbCancel     context.CancelFunc
+	hbInterval   time.Duration // broker-negotiated heartbeat interval (guarded by mu)
 }
 
 type shareAssignment struct {
@@ -218,11 +219,10 @@ func (s *ShareConsumer) joinShareGroup(ctx context.Context) error {
 		s.memberEpoch = resp.MemberEpoch
 		s.coordID = coord
 		s.hasCoord = true
-		s.mu.Unlock()
-
 		if resp.HeartbeatIntervalMs > 0 {
-			s.client.cfg.Consumer.HeartbeatInterval = time.Duration(resp.HeartbeatIntervalMs) * time.Millisecond
+			s.hbInterval = time.Duration(resp.HeartbeatIntervalMs) * time.Millisecond
 		}
+		s.mu.Unlock()
 
 		if len(resp.Assignment) > 0 {
 			if err := s.applyShareAssignment(resp.Assignment); err != nil {
@@ -467,7 +467,12 @@ func (s *ShareConsumer) stopShareHeartbeat() {
 }
 
 func (s *ShareConsumer) shareHeartbeatLoop(ctx context.Context) {
-	interval := s.client.cfg.Consumer.HeartbeatInterval
+	s.mu.Lock()
+	interval := s.hbInterval
+	s.mu.Unlock()
+	if interval <= 0 {
+		interval = s.client.cfg.Consumer.HeartbeatInterval
+	}
 	if interval <= 0 {
 		interval = 3 * time.Second
 	}

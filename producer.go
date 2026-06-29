@@ -36,9 +36,6 @@ func (p *Producer) ProduceSyncResult(ctx context.Context, records ...Record) ([]
 	if len(records) == 0 {
 		return nil, nil
 	}
-	if p.partitioner == nil {
-		p.partitioner = HashPartitioner{}
-	}
 	if err := p.ensureProducerID(ctx); err != nil {
 		return nil, err
 	}
@@ -240,10 +237,15 @@ func (p *Producer) sendRecords(ctx context.Context, records []Record, opts recor
 		}
 	}
 
+	// nextSeq is invoked from one goroutine per broker during the parallel
+	// fan-out below, so the shared seqCursor map must be guarded.
+	var seqMu sync.Mutex
 	nextSeq := func(topic string, part int32) int32 {
 		k := partKey{topic, part}
+		seqMu.Lock()
 		seq := seqCursor[k]
 		seqCursor[k]++
+		seqMu.Unlock()
 		return seq
 	}
 

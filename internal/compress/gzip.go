@@ -29,13 +29,13 @@ func Gunzip(in []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer r.Close()
-	limited := io.LimitReader(r, int64(limits.MaxDecompressedBytes)+1)
+	limited := io.LimitReader(r, int64(limits.MaxDecompressedBytes())+1)
 	out, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, err
 	}
-	if len(out) > limits.MaxDecompressedBytes {
-		return nil, fmt.Errorf("compress: gzip decompressed size exceeds limit %d", limits.MaxDecompressedBytes)
+	if len(out) > limits.MaxDecompressedBytes() {
+		return nil, fmt.Errorf("compress: gzip decompressed size exceeds limit %d", limits.MaxDecompressedBytes())
 	}
 	return out, nil
 }

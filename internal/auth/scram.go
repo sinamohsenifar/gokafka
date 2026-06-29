@@ -45,8 +45,8 @@ func scramExchange(ctx context.Context, conn requester, sec Config, newHash func
 	if iterations < 1 {
 		iterations = 4096
 	}
-	if iterations > limits.MaxSCRAMIterations {
-		return fmt.Errorf("auth: SCRAM iteration count %d exceeds limit %d", iterations, limits.MaxSCRAMIterations)
+	if iterations > limits.MaxSCRAMIterations() {
+		return fmt.Errorf("auth: SCRAM iteration count %d exceeds limit %d", iterations, limits.MaxSCRAMIterations())
 	}
 
 	salted := pbkdf2(newHash, sec.SASL.Password, salt, iterations)

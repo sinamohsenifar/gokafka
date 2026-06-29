@@ -1,6 +1,7 @@
 package gokafka_test
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/sinamohsenifar/gokafka"
@@ -27,6 +28,26 @@ func TestRoundRobinPartitioner(t *testing.T) {
 	if len(seen) != 3 {
 		t.Fatalf("expected all partitions visited, got %v", seen)
 	}
+}
+
+// TestRoundRobinPartitionerConcurrent exercises the atomic counter under -race;
+// concurrent producer goroutines share one partitioner.
+func TestRoundRobinPartitionerConcurrent(t *testing.T) {
+	p := &gokafka.RoundRobinPartitioner{}
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				if got := p.Partition(nil, 4); got < 0 || got >= 4 {
+					t.Errorf("partition out of range: %d", got)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestWithConsumerMergesConfig(t *testing.T) {

@@ -144,13 +144,13 @@ func (r *Registry) do(req *http.Request, out any) error {
 		return err
 	}
 	defer resp.Body.Close()
-	limited := io.LimitReader(resp.Body, int64(limits.MaxHTTPBodyBytes)+1)
+	limited := io.LimitReader(resp.Body, int64(limits.MaxHTTPBodyBytes())+1)
 	data, err := io.ReadAll(limited)
 	if err != nil {
 		return err
 	}
-	if len(data) > limits.MaxHTTPBodyBytes {
-		return fmt.Errorf("schema: response body exceeds limit %d", limits.MaxHTTPBodyBytes)
+	if len(data) > limits.MaxHTTPBodyBytes() {
+		return fmt.Errorf("schema: response body exceeds limit %d", limits.MaxHTTPBodyBytes())
 	}
 	if resp.StatusCode >= 300 {
 		snippet := string(data)

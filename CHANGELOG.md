@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Poll` runs fetch rounds until records arrive or the context ends — the first `ShareFetch` only initializes broker-side share state and returns empty.
   - `WithConsumeFromBeginning(true)` now sets the group config `share.auto.offset.reset=earliest` before the first fetch, so records produced before the consumer joins are delivered.
 
+### Fixed (concurrency / data races)
+
+- **`RoundRobinPartitioner` counter** — now incremented with `sync/atomic`; concurrent producer goroutines previously raced on it.
+- **Shared producer partitioner** — `AsyncProducer` no longer mutates the shared `Producer.partitioner` at `Run` (it derived the same partitioner from config anyway), removing a race with concurrent sync/batch producers. The lazy `partitioner` write in `ProduceSyncResult` was also removed (it is always set at construction).
+- **Idempotent sequence map** — the per-partition `seqCursor` is now mutex-guarded; the parallel per-broker produce fan-out wrote it concurrently.
+- **Process resource limits** — `internal/limits` values are stored with `sync/atomic`; concurrent `NewClient` and in-flight decode/decompress/auth no longer race on them.
+- **Share consumer config write** — the broker-negotiated heartbeat interval is stored on the `ShareConsumer` (mutex-guarded) instead of mutating the shared client `Config`.
+- **Context-aware backoff** — `commitOffsets` rebalance/rejoin retries use a cancellable wait instead of `time.Sleep`, so a cancelled context returns promptly.
+
 ### Added
 
 - **GROUP config resource (type 32)** — `IncrementalAlterConfigsRequest` can target group configs (`protocol.ConfigResourceGroup`), used to set `share.auto.offset.reset` for share groups.

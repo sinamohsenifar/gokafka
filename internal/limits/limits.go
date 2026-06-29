@@ -1,5 +1,7 @@
 package limits
 
+import "sync/atomic"
+
 // Defaults guard against malicious broker/registry payloads (OOM / compression bombs).
 const (
 	DefaultMaxResponseBytes     = 64 << 20 // 64 MiB
@@ -8,12 +10,35 @@ const (
 	DefaultMaxHTTPBodyBytes     = 8 << 20
 )
 
+// Limits are process-global and read from hot paths (decode, decompress, auth,
+// schema HTTP). They are stored atomically so concurrent NewClient calls and
+// in-flight requests never race. Note: because they are process-global, the
+// most recent NewClient wins if two clients configure different limits.
 var (
-	MaxResponseBytes     = DefaultMaxResponseBytes
-	MaxDecompressedBytes = DefaultMaxDecompressedBytes
-	MaxSCRAMIterations   = DefaultMaxSCRAMIterations
-	MaxHTTPBodyBytes     = DefaultMaxHTTPBodyBytes
+	maxResponseBytes     atomic.Int64
+	maxDecompressedBytes atomic.Int64
+	maxSCRAMIterations   atomic.Int64
+	maxHTTPBodyBytes     atomic.Int64
 )
+
+func init() {
+	maxResponseBytes.Store(DefaultMaxResponseBytes)
+	maxDecompressedBytes.Store(DefaultMaxDecompressedBytes)
+	maxSCRAMIterations.Store(DefaultMaxSCRAMIterations)
+	maxHTTPBodyBytes.Store(DefaultMaxHTTPBodyBytes)
+}
+
+// MaxResponseBytes is the cap on a single Kafka response frame.
+func MaxResponseBytes() int { return int(maxResponseBytes.Load()) }
+
+// MaxDecompressedBytes is the cap on a decompressed record batch.
+func MaxDecompressedBytes() int { return int(maxDecompressedBytes.Load()) }
+
+// MaxSCRAMIterations is the cap on a server-advertised SCRAM iteration count.
+func MaxSCRAMIterations() int { return int(maxSCRAMIterations.Load()) }
+
+// MaxHTTPBodyBytes is the cap on a Schema Registry HTTP response body.
+func MaxHTTPBodyBytes() int { return int(maxHTTPBodyBytes.Load()) }
 
 // Config holds optional client resource limits (zero = use defaults).
 type Config struct {
@@ -23,18 +48,18 @@ type Config struct {
 	MaxHTTPBodyBytes     int
 }
 
-// Apply updates package defaults from cfg (non-zero fields only).
+// Apply updates process limits from cfg (non-zero fields only).
 func Apply(cfg Config) {
 	if cfg.MaxResponseBytes > 0 {
-		MaxResponseBytes = cfg.MaxResponseBytes
+		maxResponseBytes.Store(int64(cfg.MaxResponseBytes))
 	}
 	if cfg.MaxDecompressedBytes > 0 {
-		MaxDecompressedBytes = cfg.MaxDecompressedBytes
+		maxDecompressedBytes.Store(int64(cfg.MaxDecompressedBytes))
 	}
 	if cfg.MaxSCRAMIterations > 0 {
-		MaxSCRAMIterations = cfg.MaxSCRAMIterations
+		maxSCRAMIterations.Store(int64(cfg.MaxSCRAMIterations))
 	}
 	if cfg.MaxHTTPBodyBytes > 0 {
-		MaxHTTPBodyBytes = cfg.MaxHTTPBodyBytes
+		maxHTTPBodyBytes.Store(int64(cfg.MaxHTTPBodyBytes))
 	}
 }

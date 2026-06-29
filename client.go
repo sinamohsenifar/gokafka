@@ -54,7 +54,7 @@ func NewClient(cfg Config) (*Client, error) {
 			DialTimeout:        cfg.Connection.DialTimeout,
 			RequestTimeout:     cfg.Connection.RequestTimeout,
 			MetadataTTL:        cfg.Connection.MetadataTTL,
-			MaxResponseBytes:   limits.MaxResponseBytes,
+			MaxResponseBytes:   limits.MaxResponseBytes(),
 			HostRemap:          cfg.Connection.HostRemap,
 			AddressMapper:      cfg.Connection.BrokerAddressMapper,
 			AllowedBrokerHosts: cfg.Connection.AllowedBrokerHosts,

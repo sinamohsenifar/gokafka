@@ -1,5 +1,7 @@
 package gokafka
 
+import "sync/atomic"
+
 // Partitioner selects a partition for a record key.
 type Partitioner interface {
 	Partition(key []byte, numPartitions int) int32
@@ -33,6 +35,7 @@ func fnv1a32(key []byte) uint32 {
 }
 
 // RoundRobinPartitioner ignores keys and cycles partitions.
+// Safe for concurrent use by multiple producer goroutines.
 type RoundRobinPartitioner struct {
 	counter uint32
 }
@@ -41,6 +44,6 @@ func (r *RoundRobinPartitioner) Partition(_ []byte, n int) int32 {
 	if n <= 0 {
 		return 0
 	}
-	r.counter++
-	return int32(r.counter % uint32(n))
+	v := atomic.AddUint32(&r.counter, 1)
+	return int32(v % uint32(n))
 }

@@ -194,6 +194,18 @@ func (c *Consumer) Commit(ctx context.Context, records ...Record) error {
 	return c.commitOffsets(ctx, records, 0)
 }
 
+// sleepCtx waits for d or until ctx is cancelled, returning ctx.Err() if cancelled.
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
 func (c *Consumer) commitOffsets(ctx context.Context, records []Record, attempt int) error {
 	const maxCommitAttempts = 20
 	if err := c.client.requireOpen(); err != nil {
@@ -241,12 +253,16 @@ func (c *Consumer) commitOffsets(ctx context.Context, records []Record, attempt 
 	}
 	if code != 0 {
 		if code == int16(ErrCodeRebalanceInProg) && attempt+1 < maxCommitAttempts {
-			time.Sleep(500 * time.Millisecond)
+			if err := sleepCtx(ctx, 500*time.Millisecond); err != nil {
+				return err
+			}
 			return c.commitOffsets(ctx, records, attempt+1)
 		}
 		if c.shouldRejoin(newKafkaError(code, "", 0, "offset commit failed")) {
 			if attempt+1 < maxCommitAttempts {
-				time.Sleep(200 * time.Millisecond)
+				if err := sleepCtx(ctx, 200*time.Millisecond); err != nil {
+					return err
+				}
 				if err := c.rejoin(ctx); err != nil {
 					return err
 				}

@@ -17,5 +17,5 @@ func ZstdEncode(in []byte) ([]byte, error) {
 
 // ZstdDecode decompresses standard ZSTD frames.
 func ZstdDecode(in []byte) ([]byte, error) {
-	return zstd.Decode(in, limits.MaxDecompressedBytes)
+	return zstd.Decode(in, limits.MaxDecompressedBytes())
 }

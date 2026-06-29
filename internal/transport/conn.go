@@ -37,7 +37,7 @@ func Dial(ctx context.Context, addr, clientID string, sec auth.Config, dialTimeo
 		requestTimeout = 30 * time.Second
 	}
 	if maxResponseBytes <= 0 {
-		maxResponseBytes = limits.MaxResponseBytes
+		maxResponseBytes = limits.MaxResponseBytes()
 	}
 	d := net.Dialer{Timeout: dialTimeout}
 	nc, err := auth.Dial(ctx, d, addr, sec)
