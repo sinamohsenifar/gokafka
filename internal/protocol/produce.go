@@ -195,49 +195,77 @@ func encodeRecordBatch(records []ProduceRecord, settings ProduceSettings, baseSe
 }
 
 func encodeRecordsPayload(records []ProduceRecord) []byte {
-	buf := wire.NewBuffer(64)
-	firstMs := records[0].Timestamp
-	if firstMs.IsZero() {
-		firstMs = time.Now()
+	// Use a single "now" for all records lacking a timestamp so the two passes
+	// below agree (and records in one batch share a consistent base time).
+	now := time.Now().UnixMilli()
+	firstMsVal := now
+	if !records[0].Timestamp.IsZero() {
+		firstMsVal = records[0].Timestamp.UnixMilli()
 	}
-	firstMsVal := firstMs.UnixMilli()
-	for i, pr := range records {
-		ts := pr.Timestamp
-		if ts.IsZero() {
-			ts = time.Now()
+	delta := func(pr ProduceRecord) int64 {
+		if pr.Timestamp.IsZero() {
+			return now - firstMsVal
 		}
-		rec := encodeSingleRecord(pr.Key, pr.Value, pr.Headers, int64(i), ts.UnixMilli()-firstMsVal)
-		buf.WriteVarint(len(rec))
-		buf.B = append(buf.B, rec...)
+		return pr.Timestamp.UnixMilli() - firstMsVal
+	}
+	// Pre-size the buffer to the exact total so the whole batch is one allocation.
+	total := 0
+	for i, pr := range records {
+		bodyLen := recordBodyLen(pr.Key, pr.Value, pr.Headers, int64(i), delta(pr))
+		total += varintLen(bodyLen) + bodyLen
+	}
+	buf := wire.NewBuffer(total)
+	for i, pr := range records {
+		appendRecord(buf, pr.Key, pr.Value, pr.Headers, int64(i), delta(pr))
 	}
 	return buf.Bytes()
 }
 
-func encodeSingleRecord(key, value []byte, headers [][2][]byte, offsetDelta, timestampDelta int64) []byte {
-	buf := wire.NewBuffer(64 + len(key) + len(value))
+// appendRecord writes one record (length-prefixed) directly into buf, avoiding a
+// per-record scratch buffer and copy.
+func appendRecord(buf *wire.Buffer, key, value []byte, headers [][2][]byte, offsetDelta, timestampDelta int64) {
+	buf.WriteVarint(recordBodyLen(key, value, headers, offsetDelta, timestampDelta))
 	buf.WriteInt8(0) // attributes
 	buf.WriteVarint(int(timestampDelta))
 	buf.WriteVarint(int(offsetDelta))
 	buf.WriteVarint(len(key))
-	if len(key) > 0 {
-		buf.B = append(buf.B, key...)
-	}
+	buf.B = append(buf.B, key...)
 	buf.WriteVarint(len(value))
-	if len(value) > 0 {
-		buf.B = append(buf.B, value...)
-	}
+	buf.B = append(buf.B, value...)
 	buf.WriteVarint(len(headers))
 	for _, h := range headers {
 		buf.WriteVarint(len(h[0]))
-		if len(h[0]) > 0 {
-			buf.B = append(buf.B, h[0]...)
-		}
+		buf.B = append(buf.B, h[0]...)
 		buf.WriteVarint(len(h[1]))
-		if len(h[1]) > 0 {
-			buf.B = append(buf.B, h[1]...)
-		}
+		buf.B = append(buf.B, h[1]...)
 	}
-	return buf.Bytes()
+}
+
+// recordBodyLen returns the encoded byte length of a record body (everything
+// after its length prefix).
+func recordBodyLen(key, value []byte, headers [][2][]byte, offsetDelta, timestampDelta int64) int {
+	n := 1 // attributes
+	n += varintLen(int(timestampDelta))
+	n += varintLen(int(offsetDelta))
+	n += varintLen(len(key)) + len(key)
+	n += varintLen(len(value)) + len(value)
+	n += varintLen(len(headers))
+	for _, h := range headers {
+		n += varintLen(len(h[0])) + len(h[0])
+		n += varintLen(len(h[1])) + len(h[1])
+	}
+	return n
+}
+
+// varintLen returns the number of bytes WriteVarint(v) writes (zigzag + uvarint).
+func varintLen(v int) int {
+	uv := (uint64(int64(v)) << 1) ^ uint64(int64(v)>>63)
+	n := 1
+	for uv >= 0x80 {
+		uv >>= 7
+		n++
+	}
+	return n
 }
 
 type topicParts struct {
