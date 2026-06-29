@@ -11,10 +11,10 @@ GoKafka is a pure Go client for Apache Kafka. It speaks the Kafka binary protoco
 The API is built around `context.Context`, functional options, and explicit error types. It targets Kafka **3.4+** and **KRaft** clusters, with negotiated API versions at connect time.
 
 ```bash
-go get github.com/sinamohsenifar/gokafka@v0.23.0
+go get github.com/sinamohsenifar/gokafka@v0.25.0
 ```
 
-**Requirements:** Go 1.22+ · Kafka 3.4+ (KRaft recommended; 4.x is KRaft-only). CI tests Go 1.22–1.24 against Kafka 3.9.2 and 4.3.0.
+**Requirements:** Go 1.22+ · Kafka 3.4+ (KRaft recommended; 4.x is KRaft-only). CI tests Go 1.22–1.26 against Kafka 3.9.2, 4.0.2, 4.1.2, 4.2.1, and 4.3.0.
 
 ### Supported Apache Kafka releases
 
@@ -41,10 +41,12 @@ Several mature Kafka clients exist for Go. They differ mainly in dependencies, d
 | **Dependencies** | stdlib only | Go modules | Go modules | Go modules | CGO + librdkafka |
 | **Pure Go binary** | Yes | Yes | Yes | Yes | No (native libs) |
 | **Protocol implementation** | In-tree | In-tree | In-tree | In-tree | librdkafka wrapper |
-| **Idempotent producer** | Yes | Yes | Yes | Yes | Yes |
-| **Transactions (EOS)** | Yes | Yes | Limited | Yes | Yes |
+| **Idempotent producer** | Yes | Yes | No | Yes | Yes |
+| **Transactions (EOS)** | Yes | Yes | No | Yes | Yes |
 | **Consumer groups** | Yes | Yes | Yes | Yes | Yes |
-| **Cooperative rebalance** | Yes | Yes | Partial | Yes | Yes |
+| **Cooperative rebalance** | Yes | Yes | No | Yes | Yes |
+| **KIP-848 next-gen groups** | Yes | Yes | No | No | Yes |
+| **KIP-932 share groups** | Yes | Yes | No | No | No |
 | **Admin client** | Yes | Yes | Partial | Yes | Yes |
 | **ACL admin** | Yes | Yes | No | Yes | Yes |
 | **zstd compression** | Yes (pure Go) | Yes | Yes | Yes | Yes |
@@ -77,7 +79,7 @@ GoKafka covers idempotent produce, transactions, consumer groups, admin, TLS/SAS
 - Batch producer with linger and batch-size tuning
 - **Idempotent produce** enabled by default (`acks=all`, sequence reservation on retry)
 - **Transactional produce** (`BeginTransaction`, `ProduceWithinTxn`, `Commit` / `Abort`)
-- Partitioners: hash (key-based) and round-robin
+- Partitioners: **murmur2 hash** (key-based, wire-compatible with the Java client and librdkafka) and round-robin
 - Compression: none, gzip, snappy, lz4, **zstd** (pure Go, stdlib-only)
 - Record headers and timestamps
 
@@ -102,9 +104,15 @@ GoKafka covers idempotent produce, transactions, consumer groups, admin, TLS/SAS
 
 - Topics: create (with configs), delete, describe, list
 - Partitions: create, describe leaders/ISR/replicas
-- Configs: describe, alter, incremental alter
+- Configs: describe, alter, incremental alter (topic, broker, and **group** resources)
 - Consumer groups: list, describe, delete
 - Offsets: delete committed offsets for a group
+- Records: **delete records** before an offset (`DeleteRecords`)
+- Leadership: **elect preferred/unclean leaders** (`ElectLeaders`)
+- Storage: **describe log dirs** (`DescribeLogDirs`)
+- SCRAM: **create/delete user credentials** (`UpsertUserScramCredential`, KIP-554)
+- Quotas: **describe/set client quotas** (`DescribeClientQuotas`, `SetClientQuota`, KIP-546)
+- Transactions: **list/describe transactions** (`ListTransactions`, `DescribeTransactions`, KIP-664)
 - Cluster metadata: brokers, controller, cluster id
 - ACLs: create, describe, delete
 
@@ -125,7 +133,7 @@ GoKafka covers idempotent produce, transactions, consumer groups, admin, TLS/SAS
 - Structured logging: text, JSON, ECS (Elastic APM–friendly fields)
 - In-process metrics with Prometheus HTTP handler
 - Bridges for Prometheus and OpenTelemetry (no OTel SDK dependency in core)
-- `log/slog` integration via `WithSlogLogger`
+- `log/slog` integration: `WithSlogLogger`, `WithSlogHandler`, or route into an existing `*slog.Logger` with `WithSlogLoggerFrom`
 
 ---
 
@@ -260,6 +268,22 @@ if err != nil {
 }
 _ = desc
 _ = configs
+
+// Delete records before offset 100 on partition 0.
+_, _ = admin.DeleteRecords(ctx, map[string]map[int32]int64{"events": {0: 100}})
+
+// Throttle a user to 1 MiB/s produce.
+_ = admin.SetClientQuota(ctx,
+	gokafka.QuotaEntity{gokafka.QuotaEntityUser: "alice"},
+	gokafka.QuotaOp{Key: "producer_byte_rate", Value: 1 << 20},
+)
+
+// Manage a SCRAM credential.
+_ = admin.UpsertUserScramCredential(ctx, "alice", gokafka.ScramSHA256, "s3cret", 4096)
+
+// Inspect in-flight transactions.
+txns, _ := admin.ListTransactions(ctx, nil, nil)
+_ = txns
 ```
 
 ---
@@ -385,7 +409,14 @@ client, _ := gokafka.NewClient(cfg)
 http.Handle("/metrics", client.PrometheusHandler())
 ```
 
-Register bridges to forward metrics into existing Prometheus or OpenTelemetry pipelines without adding OTel as a direct dependency.
+Route logs into your application's existing `log/slog` setup (its handler, attributes, and level):
+
+```go
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "myapp")
+cfg, _ := gokafka.NewConfig(brokers, gokafka.WithSlogLoggerFrom(logger))
+```
+
+Register bridges to forward metrics into existing Prometheus or OpenTelemetry pipelines without adding OTel as a direct dependency. Custom `Logger`, `Tracer`, and `MetricsRecorder` implementations can be supplied with `WithLogger`, `WithTracer`, and `WithMetricsHook`.
 
 ---
 
