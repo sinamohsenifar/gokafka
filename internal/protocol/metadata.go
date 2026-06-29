@@ -201,7 +201,7 @@ func readCompactInt32Array(buf *wire.Buffer) ([]int32, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]int32, 0, int(n)-1)
+	out := make([]int32, 0, safePrealloc(int(n)-1))
 	for i := 1; i < int(n); i++ {
 		v, err := buf.ReadInt32()
 		if err != nil {
@@ -383,7 +383,7 @@ func readInt32Array(buf *wire.Buffer) ([]int32, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]int32, 0, int(n))
+	out := make([]int32, 0, safePrealloc(int(n)))
 	for i := 0; i < int(n); i++ {
 		v, err := buf.ReadInt32()
 		if err != nil {

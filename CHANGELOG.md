@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Share consumer config write** — the broker-negotiated heartbeat interval is stored on the `ShareConsumer` (mutex-guarded) instead of mutating the shared client `Config`.
 - **Context-aware backoff** — `commitOffsets` rebalance/rejoin retries use a cancellable wait instead of `time.Sleep`, so a cancelled context returns promptly.
 
+### Security / robustness
+
+- **Bounded decode preallocation** — slice preallocations driven by an untrusted wire array count are capped (`safePrealloc`); a corrupt/hostile frame advertising a huge element count can no longer trigger a multi-gigabyte allocation before the element-by-element decode loop runs. Applied across `ApiVersions`, `Metadata`, admin, ACL, and group decoders.
+- **Record batch magic validation** — `decodeOneRecordBatch` rejects any batch whose magic byte is not `2` instead of silently misparsing v0/v1 message sets into garbage records.
+
 ### Added
 
 - **GROUP config resource (type 32)** — `IncrementalAlterConfigsRequest` can target group configs (`protocol.ConfigResourceGroup`), used to set `share.auto.offset.reset` for share groups.

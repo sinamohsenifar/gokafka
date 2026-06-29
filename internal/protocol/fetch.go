@@ -372,8 +372,15 @@ func decodeOneRecordBatch(topic string, part int32, batch []byte) ([]FetchedReco
 	if _, err := buf.ReadInt32(); err != nil { // partitionLeaderEpoch
 		return nil, err
 	}
-	if _, err := buf.ReadInt8(); err != nil { // magic
+	magic, err := buf.ReadInt8() // magic
+	if err != nil {
 		return nil, err
+	}
+	if magic != 2 {
+		// v0/v1 message sets have an entirely different layout; parsing them as
+		// a v2 RecordBatch yields garbage records. Brokers >= 0.11 (well below
+		// our 3.4+ target) always send v2, so reject anything else.
+		return nil, fmt.Errorf("protocol: unsupported record batch magic %d (expected 2)", magic)
 	}
 	if _, err := buf.ReadInt32(); err != nil { // crc
 		return nil, err

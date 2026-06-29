@@ -42,7 +42,7 @@ func decodeApiVersionsResponseLegacy(version int16, body []byte) ([]ApiVersion, 
 	if err != nil {
 		return nil, errCode, err
 	}
-	out := make([]ApiVersion, 0, int(n))
+	out := make([]ApiVersion, 0, safePrealloc(int(n)))
 	for i := 0; i < int(n); i++ {
 		key, err := buf.ReadInt16()
 		if err != nil {
@@ -76,7 +76,7 @@ func decodeApiVersionsResponseFlex(body []byte) ([]ApiVersion, int16, error) {
 	if err != nil {
 		return nil, errCode, err
 	}
-	out := make([]ApiVersion, 0, int(n)-1)
+	out := make([]ApiVersion, 0, safePrealloc(int(n)-1))
 	for i := 1; i < int(n); i++ {
 		key, err := buf.ReadInt16()
 		if err != nil {

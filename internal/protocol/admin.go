@@ -37,7 +37,7 @@ func decodeListGroupsResponseLegacy(body []byte) ([]ConsumerGroupListing, error)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ConsumerGroupListing, 0, int(n))
+	out := make([]ConsumerGroupListing, 0, safePrealloc(int(n)))
 	for i := 0; i < int(n); i++ {
 		id, err := buf.ReadString()
 		if err != nil {
@@ -61,7 +61,7 @@ func decodeListGroupsResponseFlex(body []byte) ([]ConsumerGroupListing, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ConsumerGroupListing, 0, int(n)-1)
+	out := make([]ConsumerGroupListing, 0, safePrealloc(int(n)-1))
 	for i := 1; i < int(n); i++ {
 		id, err := buf.ReadCompactString()
 		if err != nil {
@@ -142,7 +142,7 @@ func decodeDescribeGroupsResponseLegacy(body []byte) ([]ConsumerGroupDescription
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ConsumerGroupDescription, 0, int(n))
+	out := make([]ConsumerGroupDescription, 0, safePrealloc(int(n)))
 	for i := int32(0); i < n; i++ {
 		errCode, err := buf.ReadInt16()
 		if err != nil {
@@ -213,7 +213,7 @@ func decodeDescribeGroupsResponseFlex(body []byte) ([]ConsumerGroupDescription, 
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ConsumerGroupDescription, 0, int(n)-1)
+	out := make([]ConsumerGroupDescription, 0, safePrealloc(int(n)-1))
 	for i := 1; i < int(n); i++ {
 		errCode, err := buf.ReadInt16()
 		if err != nil {

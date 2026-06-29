@@ -24,7 +24,7 @@ func decodeCreateTopicsResponseLegacy(body []byte) ([]TopicMutationResult, error
 	if err != nil {
 		return nil, err
 	}
-	out := make([]TopicMutationResult, 0, int(n))
+	out := make([]TopicMutationResult, 0, safePrealloc(int(n)))
 	for i := 0; i < int(n); i++ {
 		name, err := buf.ReadString()
 		if err != nil {
@@ -51,7 +51,7 @@ func decodeCreateTopicsResponseFlex(body []byte) ([]TopicMutationResult, error) 
 	if err != nil {
 		return nil, err
 	}
-	out := make([]TopicMutationResult, 0, int(n)-1)
+	out := make([]TopicMutationResult, 0, safePrealloc(int(n)-1))
 	for i := 1; i < int(n); i++ {
 		name, err := buf.ReadCompactString()
 		if err != nil {
@@ -93,7 +93,7 @@ func DecodeDeleteTopicsResponse(body []byte) ([]TopicMutationResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]TopicMutationResult, 0, int(n)-1)
+	out := make([]TopicMutationResult, 0, safePrealloc(int(n)-1))
 	for i := 1; i < int(n); i++ {
 		name, err := buf.ReadCompactString()
 		if err != nil {
@@ -306,7 +306,7 @@ func decodeCreatePartitionsResponseLegacy(body []byte) ([]TopicMutationResult, e
 	if err != nil {
 		return nil, err
 	}
-	out := make([]TopicMutationResult, 0, int(n))
+	out := make([]TopicMutationResult, 0, safePrealloc(int(n)))
 	for i := 0; i < int(n); i++ {
 		name, err := buf.ReadString()
 		if err != nil {
@@ -333,7 +333,7 @@ func decodeCreatePartitionsResponseFlex(body []byte) ([]TopicMutationResult, err
 	if err != nil {
 		return nil, err
 	}
-	out := make([]TopicMutationResult, 0, int(n)-1)
+	out := make([]TopicMutationResult, 0, safePrealloc(int(n)-1))
 	for i := 1; i < int(n); i++ {
 		name, err := buf.ReadCompactString()
 		if err != nil {
@@ -573,7 +573,7 @@ func DecodeDeleteGroupsResponse(body []byte) ([]GroupMutationResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]GroupMutationResult, 0, int(n)-1)
+	out := make([]GroupMutationResult, 0, safePrealloc(int(n)-1))
 	for i := 1; i < int(n); i++ {
 		id, err := buf.ReadCompactString()
 		if err != nil {
