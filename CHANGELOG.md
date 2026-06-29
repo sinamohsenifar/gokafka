@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Maintenance
+
+- **CI: harden Kafka broker startup** — the Integration and Compatibility workflows now retry broker startup up to 3 times (recreating the container) instead of failing the run on the first transient startup flake on shared runners. No library change.
+
 ## [0.25.10] - 2026-06-29
 
 ### Added

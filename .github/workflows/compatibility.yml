@@ -53,30 +53,37 @@ jobs:
         env:
           KAFKA_IMAGE: apache/kafka:${{ matrix.kafka }}
         run: |
-          set -euxo pipefail
+          set -euo pipefail
           docker compose pull kafka
-          docker compose up -d kafka
-          for i in $(seq 1 180); do
-            state=$(docker compose ps -a kafka --format '{{.State}}' 2>/dev/null | head -1 || true)
-            case "$state" in
-              exited|dead)
-                echo "kafka container failed (state=$state):"
-                docker compose ps -a
-                docker compose logs --tail=120 kafka
-                exit 1
-                ;;
-            esac
-            if docker compose exec -T kafka /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1; then
-              echo "kafka ready (attempt $i)"
-              break
-            fi
-            sleep 2
-            if [ "$i" -eq 180 ]; then
-              echo "kafka not ready (state=${state:-unknown})"
-              docker compose logs --tail=120 kafka
-              exit 1
-            fi
+          # Broker startup occasionally flakes on shared runners (the container
+          # exits early or doesn't bind in time). Retry up to 3 times, recreating.
+          start_kafka() {
+            docker compose up -d --force-recreate kafka
+            for i in $(seq 1 120); do
+              state=$(docker compose ps -a kafka --format '{{.State}}' 2>/dev/null | head -1 || true)
+              case "$state" in
+                exited|dead) return 1 ;;
+              esac
+              if docker compose exec -T kafka /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1; then
+                echo "kafka ready (poll $i)"
+                return 0
+              fi
+              sleep 2
+            done
+            return 1
+          }
+          ok=0
+          for attempt in 1 2 3; do
+            if start_kafka; then ok=1; break; fi
+            echo "kafka start attempt $attempt failed; recent state/logs:"
+            docker compose ps -a || true
+            docker compose logs --tail=80 kafka || true
+            docker compose rm -sf kafka || true
           done
+          if [ "$ok" -ne 1 ]; then
+            echo "kafka failed to start after 3 attempts"
+            exit 1
+          fi
           docker compose pull schema-registry
           docker compose up -d schema-registry
           docker compose run --rm kafka-init
