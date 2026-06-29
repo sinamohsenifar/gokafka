@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.22] - 2026-06-29
+
+### Added
+
+- **Consumer-group lag (`Admin.ConsumerGroupLag`)** — returns per-partition lag for a group (log-end offset minus committed offset), a headline monitoring primitive that franz-go's `kadm` exposes and that sarama/kafka-go users routinely hand-roll. Built from OffsetFetch (committed) + ListOffsets (latest), with leader-grouped requests and metadata-refresh retries. Returns `[]PartitionLag{Topic, Partition, Committed, LogEndOffset, Lag}`.
+
 ## [0.25.21] - 2026-06-29
 
 ### Added
