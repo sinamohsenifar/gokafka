@@ -555,6 +555,10 @@ func (c *Consumer) loadCommittedOffsets(ctx context.Context, coord int32) error 
 		}
 		if co.Offset >= 0 {
 			c.bumpOffset(co.Topic, co.Partition, co.Offset)
+		} else if d := c.client.cfg.Consumer.OffsetResetDuration; d > 0 {
+			if err := c.SeekToTime(ctx, co.Topic, time.Now().Add(-d), co.Partition); err != nil {
+				return err
+			}
 		} else if c.client.cfg.Consumer.ConsumeFromBeginning {
 			if c.client.cfg.Consumer.IsolationLevel == IsolationReadCommitted {
 				if err := c.Seek(co.Topic, co.Partition, 0); err != nil {

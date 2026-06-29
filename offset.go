@@ -3,6 +3,7 @@ package gokafka
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/sinamohsenifar/gokafka/internal/protocol"
 )
@@ -29,6 +30,12 @@ func (c *Consumer) SeekToBeginning(ctx context.Context, topic string, partitions
 // SeekToEnd resolves latest offsets via ListOffsets and seeks there.
 func (c *Consumer) SeekToEnd(ctx context.Context, topic string, partitions ...int32) error {
 	return c.seekByTimestamp(ctx, topic, -1, partitions...)
+}
+
+// SeekToTime resolves, per partition, the earliest offset whose timestamp is at
+// or after t (via ListOffsets) and seeks there.
+func (c *Consumer) SeekToTime(ctx context.Context, topic string, t time.Time, partitions ...int32) error {
+	return c.seekByTimestamp(ctx, topic, t.UnixMilli(), partitions...)
 }
 
 func (c *Consumer) seekByTimestamp(ctx context.Context, topic string, ts int64, partitions ...int32) error {

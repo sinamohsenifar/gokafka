@@ -112,6 +112,13 @@ func WithConsumeFromBeginning(enabled bool) Option {
 	return func(c *Config) { c.Consumer.ConsumeFromBeginning = enabled }
 }
 
+// WithConsumeSince resets to the earliest offset at or after (now - d) when no
+// committed offset exists (KIP-1106 duration-based auto.offset.reset). Takes
+// precedence over WithConsumeFromBeginning.
+func WithConsumeSince(d time.Duration) Option {
+	return func(c *Config) { c.Consumer.OffsetResetDuration = d }
+}
+
 // WithTransaction configures exactly-once transactional producer settings.
 func WithTransaction(ts TransactionConfig) Option {
 	return func(c *Config) { c.Transaction = ts }
@@ -197,14 +204,19 @@ const (
 type ConsumerConfig struct {
 	AutoCommit           bool
 	ConsumeFromBeginning bool
-	SessionTimeout       time.Duration
-	RebalanceTimeout     time.Duration
-	HeartbeatInterval    time.Duration
-	MaxPollRecords       int
-	Assignor             PartitionAssignor
-	GroupProtocol        GroupProtocol
-	IsolationLevel       IsolationLevel
-	GroupInstanceID      string
+	// OffsetResetDuration, when > 0 and no committed offset exists, resets to the
+	// earliest offset at or after (now - duration) via ListOffsets-by-timestamp
+	// (KIP-1106 duration-based auto.offset.reset). Takes precedence over
+	// ConsumeFromBeginning.
+	OffsetResetDuration time.Duration
+	SessionTimeout      time.Duration
+	RebalanceTimeout    time.Duration
+	HeartbeatInterval   time.Duration
+	MaxPollRecords      int
+	Assignor            PartitionAssignor
+	GroupProtocol       GroupProtocol
+	IsolationLevel      IsolationLevel
+	GroupInstanceID     string
 }
 
 // PartitionAssignor selects the consumer group partition assignment strategy.
