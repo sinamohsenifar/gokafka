@@ -49,6 +49,10 @@ func ClientVersion(apiKey int16) int16 {
 		return VerElectLeaders
 	case APIDescribeLogDirs:
 		return VerDescribeLogDirs
+	case APIDescribeClientQuotas:
+		return VerDescribeClientQuotas
+	case APIAlterClientQuotas:
+		return VerAlterClientQuotas
 	case APIAlterUserScramCreds:
 		return VerAlterUserScramCreds
 	case APIIncrementalAlterConfigs:

@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Admin.ElectLeaders`** (API 43) — trigger preferred or unclean leader election for specific partitions or the whole cluster, with per-partition results.
 - **`Admin.UpsertUserScramCredential` / `Admin.DeleteUserScramCredential`** (API 51, KIP-554) — manage SCRAM-SHA-256/512 user credentials; the salt is generated locally and the salted password derived with PBKDF2 so the plaintext password never leaves the client.
 - **`Admin.DescribeLogDirs`** (API 35) — per-broker log-directory storage usage (size, offset lag, total/usable bytes per partition).
+- **`Admin.DescribeClientQuotas` / `Admin.SetClientQuota`** (APIs 48/49, KIP-546) — describe and set/remove user/client-id/ip client quotas (e.g. `producer_byte_rate`, `consumer_byte_rate`, `request_percentage`), including default-entity support. Adds `wire` float64 codec.
 - **GROUP config resource (type 32)** — `IncrementalAlterConfigsRequest` can target group configs (`protocol.ConfigResourceGroup`), used to set `share.auto.offset.reset` for share groups.
 
 ### Changed (compatibility)

@@ -27,6 +27,8 @@ const (
 	APIElectLeaders            int16 = 43
 	APIIncrementalAlterConfigs int16 = 44
 	APIOffsetDelete            int16 = 47
+	APIDescribeClientQuotas    int16 = 48
+	APIAlterClientQuotas       int16 = 49
 	APIAlterUserScramCreds     int16 = 51
 	APISaslHandshake           int16 = 17
 	APISaslAuthenticate        int16 = 36
@@ -61,6 +63,8 @@ const (
 	VerDescribeLogDirs         int16 = 5
 	VerDeleteRecords           int16 = 2
 	VerElectLeaders            int16 = 2
+	VerDescribeClientQuotas    int16 = 1
+	VerAlterClientQuotas       int16 = 1
 	VerAlterUserScramCreds     int16 = 0
 	VerDeleteGroups            int16 = 2
 	VerIncrementalAlterConfigs int16 = 0
