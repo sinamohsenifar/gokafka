@@ -106,7 +106,7 @@ internals), 88/89 Streams groups (KIP-1071).
 | KIP-899 / KIP-1102 | Rebootstrap from `bootstrap.servers` / on server signal | ➖ (refresh fails over across configured seeds; no full rebootstrap-on-signal) |
 | KIP-1106 | Duration-based `auto.offset.reset` | ❌ (earliest/latest only) |
 | KIP-390 | Configurable producer compression level | ➖ (`WithProducerCompressionLevel` honored for gzip; pure-Go snappy/lz4/zstd are fixed-strategy and ignore it) |
-| KIP-848 RE2J | Server-side regex subscription (`SubscriptionPattern`) | ❌ (explicit topic list only) |
+| KIP-848 RE2J | Server-side regex subscription | ✅ (`Client.ConsumerPattern(regex)`; next-gen protocol; broker resolves matching topics) |
 | KIP-320 | Leader-epoch fencing | ➖ (Fetch sends `current_leader_epoch` from metadata and refreshes+retries on NOT_LEADER/FENCED/UNKNOWN_LEADER_EPOCH; full truncation detection via OffsetForLeaderEpoch API 23 is a follow-up) |
 | KIP-1139 / KIP-1258 | OAuth `jwt-bearer` grant / client-assertion | ➖ (token provider is pluggable; specific grants are caller-supplied) |
 
@@ -179,7 +179,7 @@ lifecycle management (compatibility checks, config, version listing, deletes).
 2. **KIP-890 transactions v2** — adopt Produce v10+ and the newer Add/EndTxn flow.
 3. **KIP-714 client metrics** — `GetTelemetrySubscriptions` / `PushTelemetry`.
 4. **Newer API revisions** — Fetch v13+ (topic IDs), FindCoordinator v3+/batched, ShareAcknowledge v2 (`RENEW`), OffsetFetch v8+.
-5. **Consumer niceties** — server-side regex subscriptions (KIP-848 RE2J). (Duration-based `auto.offset.reset` / KIP-1106 ✅ via `WithConsumeSince`; gzip compression level / KIP-390 ✅ via `WithProducerCompressionLevel`.)
+5. _(Consumer niceties closed: KIP-1106 `WithConsumeSince`, KIP-390 `WithProducerCompressionLevel`, KIP-848 RE2J `ConsumerPattern`.)_
 6. **Schema Registry** — remaining minor endpoints (`/mode`, is-registered probe).
 
 ---

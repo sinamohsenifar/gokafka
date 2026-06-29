@@ -74,13 +74,17 @@ func (c *Consumer) joinAndAssign848(ctx context.Context) error {
 		c.mu.Unlock()
 
 		req := protocol.ConsumerGroupHeartbeatRequest{
-			GroupID:              c.group,
-			MemberID:             memberID,
-			MemberEpoch:          memberEpoch,
-			InstanceID:           instanceID,
-			RebalanceTimeoutMs:   rebalanceMs,
-			SubscribedTopicNames: append([]string(nil), c.topics...),
-			ServerAssignor:       &assignor,
+			GroupID:            c.group,
+			MemberID:           memberID,
+			MemberEpoch:        memberEpoch,
+			InstanceID:         instanceID,
+			RebalanceTimeoutMs: rebalanceMs,
+			ServerAssignor:     &assignor,
+		}
+		if c.topicRegex != "" {
+			req.SubscribedTopicRegex = &c.topicRegex // KIP-848 server-side RE2J
+		} else {
+			req.SubscribedTopicNames = append([]string(nil), c.topics...)
 		}
 		if memberEpoch == 0 {
 			// Broker requires an empty (non-null) topic partition list when joining.
@@ -88,6 +92,7 @@ func (c *Consumer) joinAndAssign848(ctx context.Context) error {
 		}
 		if memberEpoch > 0 {
 			req.SubscribedTopicNames = nil
+			req.SubscribedTopicRegex = nil
 			req.ServerAssignor = nil
 			req.InstanceID = nil
 			req.RebalanceTimeoutMs = -1

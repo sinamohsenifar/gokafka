@@ -113,6 +113,13 @@ func (c *Client) Consumer(topics []string) *Consumer {
 	return &Consumer{client: c, topics: append([]string(nil), topics...)}
 }
 
+// ConsumerPattern returns a consumer that subscribes to every topic matching the
+// given RE2J regular expression, evaluated server-side by the broker (KIP-848).
+// Requires the next-generation group protocol (WithGroupProtocol(GroupProtocolNextGen)).
+func (c *Client) ConsumerPattern(regex string) *Consumer {
+	return &Consumer{client: c, topicRegex: regex}
+}
+
 // Admin returns cluster admin operations.
 func (c *Client) Admin() *Admin {
 	return &Admin{client: c}

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.9] - 2026-06-29
+
+### Added
+
+- **Server-side regex subscriptions (KIP-848 RE2J)** — `Client.ConsumerPattern(regex)` subscribes to all topics matching an RE2J pattern, evaluated by the broker (requires `GroupProtocolNextGen`). The next-gen heartbeat sends `SubscribedTopicRegex`; the broker resolves and assigns matching topics. Integration-tested (matching topics consumed, non-matching excluded).
+
 ## [0.25.8] - 2026-06-29
 
 ### Added

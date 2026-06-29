@@ -3,6 +3,7 @@ package gokafka
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ type Consumer struct {
 	mu          sync.Mutex
 	client      *Client
 	topics      []string
+	topicRegex  string // KIP-848 server-side RE2J subscription (next-gen only)
 	group       string
 	memberID    string
 	generation  int32
@@ -294,6 +296,9 @@ func (c *Consumer) commitOffsets(ctx context.Context, records []Record, attempt 
 func (c *Consumer) joinAndAssign(ctx context.Context) error {
 	if c.useNextGenGroup() {
 		return c.joinAndAssign848(ctx)
+	}
+	if c.topicRegex != "" {
+		return fmt.Errorf("gokafka: regex subscription (ConsumerPattern) requires GroupProtocolNextGen")
 	}
 	if err := c.client.cluster.Refresh(ctx, c.topics); err != nil {
 		return err
