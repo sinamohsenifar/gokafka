@@ -21,7 +21,9 @@ const (
 	APIDescribeConfigs         int16 = 32
 	APIAlterConfigs            int16 = 33
 	APICreatePartitions        int16 = 37
+	APIDeleteRecords           int16 = 21
 	APIDeleteGroups            int16 = 42
+	APIElectLeaders            int16 = 43
 	APIIncrementalAlterConfigs int16 = 44
 	APIOffsetDelete            int16 = 47
 	APISaslHandshake           int16 = 17
@@ -54,6 +56,8 @@ const (
 	VerDescribeConfigs         int16 = 4
 	VerAlterConfigs            int16 = 2
 	VerCreatePartitions        int16 = 2
+	VerDeleteRecords           int16 = 2
+	VerElectLeaders            int16 = 2
 	VerDeleteGroups            int16 = 2
 	VerIncrementalAlterConfigs int16 = 0
 	VerOffsetDelete            int16 = 0

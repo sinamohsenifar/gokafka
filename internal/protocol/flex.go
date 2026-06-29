@@ -54,6 +54,10 @@ func flexibleRequestHeader(apiKey, apiVersion int16) bool {
 		return apiVersion >= 2
 	case APICreatePartitions, APIDeleteGroups:
 		return apiVersion >= 2
+	case APIDeleteRecords:
+		return apiVersion >= 2
+	case APIElectLeaders:
+		return apiVersion >= 2
 	case APIIncrementalAlterConfigs:
 		return apiVersion >= 1
 	case APICreateAcls, APIDescribeAcls, APIDeleteAcls:
