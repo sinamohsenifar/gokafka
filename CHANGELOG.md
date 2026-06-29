@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.18] - 2026-06-29
+
+### Added
+
+- **Batched multi-group OffsetFetch (KIP-709).** New `Admin.FetchOffsets(ctx, groups...)` returns committed offsets for several consumer groups, keyed by group id. Groups are resolved to their coordinators and batched into one OffsetFetch v8 request per coordinator. Useful for lag-monitoring and admin tooling. Requires a broker with OffsetFetch v8+ (Kafka 3.0+).
+
+### Changed
+
+- `EncodeOffsetFetchRequest` / `DecodeOffsetFetchResponse` now take an explicit version; the consumer's single-group offset load pins v6 (unchanged behavior) while the OffsetFetch negotiation ceiling is raised to v9 so the batched v8 path is reachable. The single-group hot path codec is untouched.
+
 ## [0.25.17] - 2026-06-29
 
 ### Added

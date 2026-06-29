@@ -551,12 +551,12 @@ func (c *Consumer) loadCommittedOffsets(ctx context.Context, coord int32) error 
 	for i, a := range assignments {
 		parts[i] = protocol.OffsetFetchPartition{Topic: a.topic, Partition: a.partition}
 	}
-	body := protocol.EncodeOffsetFetchRequest(group, memberID, parts)
-	rb, err := c.client.cluster.Request(ctx, coord, protocol.APIOffsetFetch, protocol.VerOffsetFetch, body)
+	body := protocol.EncodeOffsetFetchRequest(protocol.VerOffsetFetchSingle, group, memberID, parts)
+	rb, err := c.client.cluster.Request(ctx, coord, protocol.APIOffsetFetch, protocol.VerOffsetFetchSingle, body)
 	if err != nil {
 		return err
 	}
-	committed, err := protocol.DecodeOffsetFetchResponse(rb)
+	committed, err := protocol.DecodeOffsetFetchResponse(protocol.VerOffsetFetchSingle, rb)
 	if err != nil {
 		return err
 	}

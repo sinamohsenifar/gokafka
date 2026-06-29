@@ -26,7 +26,7 @@ the broker at connect time, so a lower client ceiling still interoperates.
 | 2 | ListOffsets | 3 | 11 | ➖ (no current-leader-epoch, v4+) |
 | 3 | Metadata | 12 | 13 | ✅ |
 | 8 | OffsetCommit | 8 | 10 | ➖ |
-| 9 | OffsetFetch | 6 | 10 | ➖ (flexible v6; not v8 batched multi-group) |
+| 9 | OffsetFetch | 6 / 8 | 10 | ✅ (single-group v6; batched multi-group v8 via `Admin.FetchOffsets`, KIP-709) |
 | 10 | FindCoordinator | 3 | 6 | ✅ (flexible/tagged-fields; single-key, not v4 batched) |
 | 11 | JoinGroup | 6 | 9 | ➖ |
 | 12 | Heartbeat | 4 | 4 | ✅ |
@@ -181,7 +181,7 @@ lifecycle management (compatibility checks, config, version listing, deletes).
 1. **OffsetForLeaderEpoch (KIP-320)** — leader-epoch *fencing* on Fetch is done; remaining: full *truncation detection* (query OffsetForLeaderEpoch API 23 on leader change) and committed-leader-epoch on offset commit/fetch.
 2. _(KIP-890 transactions v2 complete: implicit partition add on Produce v12 and EndTxn v5 epoch adoption with producer-id reuse across sequential transactions, all gated on `transaction.version >= 2`.)_
 3. **KIP-714 client metrics** — `GetTelemetrySubscriptions` / `PushTelemetry`.
-4. **Newer API revisions** — ShareAcknowledge v2 (`RENEW`, requires a Kafka 4.2+ broker — deferred until locally verifiable), OffsetFetch v8 (batched multi-group). (Fetch v13 topic-ids, FindCoordinator flex v3, OffsetFetch flex v6, Produce v12, EndTxn v5 done.)
+4. **Newer API revisions** — ShareAcknowledge v2 (`RENEW`, requires a Kafka 4.2+ broker — deferred until locally verifiable). (Fetch v13 topic-ids, OffsetFetch v8 multi-group, FindCoordinator flex v3, Produce v12, EndTxn v5 done.)
 5. _(Consumer niceties closed: KIP-1106 `WithConsumeSince`, KIP-390 `WithProducerCompressionLevel`, KIP-848 RE2J `ConsumerPattern`.)_
 6. _(Schema Registry lifecycle complete: register/get, compatibility, config, versions, delete, `IsRegistered`, `Mode`/`SetMode`.)_
 

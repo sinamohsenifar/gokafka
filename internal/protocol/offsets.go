@@ -17,8 +17,11 @@ type CommittedOffset struct {
 	ErrorCode int16
 }
 
-func EncodeOffsetFetchRequest(group string, _ string, parts []OffsetFetchPartition) []byte {
-	if VerOffsetFetch >= 6 {
+func EncodeOffsetFetchRequest(ver int16, group string, _ string, parts []OffsetFetchPartition) []byte {
+	if ver <= 0 {
+		ver = VerOffsetFetchSingle
+	}
+	if ver >= 6 {
 		return encodeOffsetFetchRequestFlex(group, parts)
 	}
 	return encodeOffsetFetchRequestLegacy(group, parts)
@@ -40,7 +43,7 @@ func encodeOffsetFetchRequestLegacy(group string, parts []OffsetFetchPartition) 
 		buf.WriteString(topic)
 		writeInt32Array(buf, topics[topic])
 	}
-	if VerOffsetFetch >= 5 {
+	if VerOffsetFetchSingle >= 5 {
 		buf.WriteBool(false) // require_stable
 	}
 	return buf.Bytes()
@@ -74,16 +77,19 @@ func encodeOffsetFetchRequestFlex(group string, parts []OffsetFetchPartition) []
 	return buf.Bytes()
 }
 
-func DecodeOffsetFetchResponse(body []byte) ([]CommittedOffset, error) {
-	if VerOffsetFetch >= 6 {
+func DecodeOffsetFetchResponse(ver int16, body []byte) ([]CommittedOffset, error) {
+	if ver <= 0 {
+		ver = VerOffsetFetchSingle
+	}
+	if ver >= 6 {
 		return decodeOffsetFetchResponseFlex(body)
 	}
-	return decodeOffsetFetchResponseLegacy(body)
+	return decodeOffsetFetchResponseLegacy(ver, body)
 }
 
-func decodeOffsetFetchResponseLegacy(body []byte) ([]CommittedOffset, error) {
+func decodeOffsetFetchResponseLegacy(ver int16, body []byte) ([]CommittedOffset, error) {
 	buf := wire.FromBytes(body)
-	if VerOffsetFetch >= 3 {
+	if ver >= 3 {
 		if _, err := buf.ReadInt32(); err != nil {
 			return nil, err
 		}
@@ -111,7 +117,7 @@ func decodeOffsetFetchResponseLegacy(body []byte) ([]CommittedOffset, error) {
 			if err != nil {
 				return nil, err
 			}
-			if VerOffsetFetch >= 5 {
+			if ver >= 5 {
 				if _, err := buf.ReadInt32(); err != nil {
 					return nil, err
 				}
@@ -121,7 +127,7 @@ func decodeOffsetFetchResponseLegacy(body []byte) ([]CommittedOffset, error) {
 				return nil, err
 			}
 			errCode := int16(0)
-			if VerOffsetFetch >= 2 {
+			if ver >= 2 {
 				errCode, err = buf.ReadInt16()
 				if err != nil {
 					return nil, err
@@ -133,7 +139,7 @@ func decodeOffsetFetchResponseLegacy(body []byte) ([]CommittedOffset, error) {
 			})
 		}
 	}
-	if VerOffsetFetch >= 2 {
+	if ver >= 2 {
 		if _, err := buf.ReadInt16(); err != nil {
 			return nil, err
 		}
@@ -196,6 +202,123 @@ func decodeOffsetFetchResponseFlex(body []byte) ([]CommittedOffset, error) {
 	}
 	if _, err := buf.ReadInt16(); err != nil { // group-level error_code (v2+)
 		return nil, err
+	}
+	if err := buf.SkipTagSection(); err != nil { // response tag
+		return nil, err
+	}
+	return out, nil
+}
+
+// EncodeOffsetFetchMultiGroupRequest encodes a batched OffsetFetch request
+// (KIP-709, v8+): one request carrying several groups. partitionsByGroup maps a
+// group id to the partitions to fetch; an empty partition slice for a group
+// requests all of that group's committed offsets.
+func EncodeOffsetFetchMultiGroupRequest(ver int16, partitionsByGroup map[string][]OffsetFetchPartition) []byte {
+	if ver <= 0 {
+		ver = VerOffsetFetchMultiGroup
+	}
+	buf := wire.NewBuffer(128)
+	buf.WriteCompactArrayLen(len(partitionsByGroup))
+	for group, parts := range partitionsByGroup {
+		buf.WriteCompactString(group)
+		if len(parts) == 0 {
+			buf.WriteUvarint(0) // null topics → all topics
+		} else {
+			byTopic := map[string][]int32{}
+			order := make([]string, 0)
+			for _, p := range parts {
+				if _, ok := byTopic[p.Topic]; !ok {
+					order = append(order, p.Topic)
+				}
+				byTopic[p.Topic] = append(byTopic[p.Topic], p.Partition)
+			}
+			buf.WriteCompactArrayLen(len(order))
+			for _, topic := range order {
+				buf.WriteCompactString(topic)
+				ps := byTopic[topic]
+				buf.WriteCompactArrayLen(len(ps))
+				for _, p := range ps {
+					buf.WriteInt32(p)
+				}
+				buf.WriteEmptyTagSection() // topic tag
+			}
+		}
+		buf.WriteEmptyTagSection() // group tag
+	}
+	buf.WriteBool(false)       // require_stable
+	buf.WriteEmptyTagSection() // request tag
+	return buf.Bytes()
+}
+
+// DecodeOffsetFetchMultiGroupResponse decodes a batched OffsetFetch response
+// (KIP-709, v8+), returning committed offsets keyed by group id.
+func DecodeOffsetFetchMultiGroupResponse(ver int16, body []byte) (map[string][]CommittedOffset, error) {
+	buf := wire.FromBytes(body)
+	if _, err := buf.ReadInt32(); err != nil { // throttle_time_ms
+		return nil, err
+	}
+	nGroups, err := buf.ReadUvarint()
+	if err != nil {
+		return nil, err
+	}
+	out := map[string][]CommittedOffset{}
+	for g := 1; g < int(nGroups); g++ {
+		group, err := buf.ReadCompactString()
+		if err != nil {
+			return nil, err
+		}
+		nTopics, err := buf.ReadUvarint()
+		if err != nil {
+			return nil, err
+		}
+		var offsets []CommittedOffset
+		for i := 1; i < int(nTopics); i++ {
+			topic, err := buf.ReadCompactString()
+			if err != nil {
+				return nil, err
+			}
+			nParts, err := buf.ReadUvarint()
+			if err != nil {
+				return nil, err
+			}
+			for j := 1; j < int(nParts); j++ {
+				part, err := buf.ReadInt32()
+				if err != nil {
+					return nil, err
+				}
+				off, err := buf.ReadInt64()
+				if err != nil {
+					return nil, err
+				}
+				if _, err := buf.ReadInt32(); err != nil { // committed_leader_epoch
+					return nil, err
+				}
+				meta, err := buf.ReadCompactNullableString()
+				if err != nil {
+					return nil, err
+				}
+				errCode, err := buf.ReadInt16()
+				if err != nil {
+					return nil, err
+				}
+				offsets = append(offsets, CommittedOffset{
+					Topic: topic, Partition: part, Offset: off, Metadata: meta, ErrorCode: errCode,
+				})
+				if err := buf.SkipTagSection(); err != nil { // partition tag
+					return nil, err
+				}
+			}
+			if err := buf.SkipTagSection(); err != nil { // topic tag
+				return nil, err
+			}
+		}
+		if _, err := buf.ReadInt16(); err != nil { // group-level error_code
+			return nil, err
+		}
+		if err := buf.SkipTagSection(); err != nil { // group tag
+			return nil, err
+		}
+		out[group] = offsets
 	}
 	if err := buf.SkipTagSection(); err != nil { // response tag
 		return nil, err
