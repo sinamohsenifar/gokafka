@@ -437,6 +437,7 @@ go run ./examples/admin
 
 | Document | Contents |
 |----------|----------|
+| [docs/CONFORMANCE.md](docs/CONFORMANCE.md) | Protocol API / KIP / Schema Registry coverage vs Apache Kafka 4.3 |
 | [docs/CAPABILITIES.md](docs/CAPABILITIES.md) | Connection types, serialization, use-case mapping |
 | [docs/KIPS.md](docs/KIPS.md) | Kafka Improvement Proposal coverage |
 | [docs/KAFKA_VERSIONS.md](docs/KAFKA_VERSIONS.md) | Broker version compatibility notes |

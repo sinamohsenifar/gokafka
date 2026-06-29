@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.2] - 2026-06-29
+
+### Fixed
+
+- **Protobuf Schema Registry wire format** — the message-index *count* is now zigzag-varint encoded to match Confluent's `KafkaProtobufSerializer` (it was a plain unsigned varint). Only affected Protobuf payloads with non-default message indexes (nested / non-first message types); the common single first-message case (`0x00`) was already correct. Added golden-byte tests.
+
+### Added
+
+- **[docs/CONFORMANCE.md](docs/CONFORMANCE.md)** — a verification matrix of GoKafka's protocol API coverage, client-relevant KIP coverage (Kafka 3.4–4.3), and Confluent Schema Registry conformance, with a prioritized gap list. Produced by cross-checking against the Apache Kafka 4.3 message definitions and Confluent Schema Registry docs.
+
 ## [0.25.1] - 2026-06-29
 
 ### Fixed

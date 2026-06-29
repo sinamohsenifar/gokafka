@@ -69,8 +69,11 @@ func encodeMessageIndexes(indexes []int) []byte {
 	if len(indexes) == 1 && indexes[0] == 0 {
 		return []byte{0}
 	}
+	// Confluent's KafkaProtobufSerializer writes both the count and each index
+	// as zigzag varints (ByteUtils.writeVarint); the count is NOT a plain
+	// unsigned varint.
 	buf := wire.NewBuffer(8)
-	buf.WriteUvarint(uint(len(indexes)))
+	buf.WriteVarint(len(indexes))
 	for _, ix := range indexes {
 		buf.WriteVarint(ix)
 	}
@@ -79,15 +82,15 @@ func encodeMessageIndexes(indexes []int) []byte {
 
 func decodeMessageIndexes(b []byte) ([]int, int, error) {
 	buf := wire.FromBytes(b)
-	n, err := buf.ReadUvarint()
+	n, err := buf.ReadVarint()
 	if err != nil {
 		return nil, 0, err
 	}
 	if n == 0 {
-		return []int{0}, 1, nil
+		return []int{0}, buf.I, nil
 	}
-	out := make([]int, 0, int(n))
-	for i := uint(0); i < n; i++ {
+	out := make([]int, 0, n)
+	for i := 0; i < n; i++ {
 		v, err := buf.ReadVarint()
 		if err != nil {
 			return nil, 0, err
