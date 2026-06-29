@@ -30,14 +30,15 @@ type ProduceResult struct {
 
 // ProduceSettings controls acks, compression, and idempotent producer fields.
 type ProduceSettings struct {
-	Acks            int16
-	TimeoutMs       int32
-	Compression     int8
-	Transactional   bool
-	TransactionalID string // required in produce request body when Transactional is true (v3+)
-	ProducerID      int64
-	ProducerEpoch   int16
-	NextSequence    func(topic string, partition int32) int32
+	Acks             int16
+	TimeoutMs        int32
+	Compression      int8
+	CompressionLevel int // KIP-390; honored for gzip, ignored by snappy/lz4/zstd
+	Transactional    bool
+	TransactionalID  string // required in produce request body when Transactional is true (v3+)
+	ProducerID       int64
+	ProducerEpoch    int16
+	NextSequence     func(topic string, partition int32) int32
 }
 
 func DefaultProduceSettings() ProduceSettings {
@@ -150,7 +151,7 @@ func encodeRecordBatch(records []ProduceRecord, settings ProduceSettings, baseSe
 		attributes |= 0x0010
 	}
 	if settings.Compression != 0 {
-		compressed, err := compress.Compress(settings.Compression, recordsPayload)
+		compressed, err := compress.Compress(settings.Compression, settings.CompressionLevel, recordsPayload)
 		if err != nil {
 			return nil, err
 		}

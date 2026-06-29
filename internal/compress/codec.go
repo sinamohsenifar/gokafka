@@ -11,13 +11,15 @@ const (
 	CodecZstd   int8 = 4
 )
 
-// Compress compresses data using the Kafka codec id.
-func Compress(codec int8, in []byte) ([]byte, error) {
+// Compress compresses data using the Kafka codec id. level is the requested
+// compression level (KIP-390); it is honored for gzip and ignored by the
+// fixed-strategy pure-Go snappy/lz4/zstd encoders. level <= 0 means default.
+func Compress(codec int8, level int, in []byte) ([]byte, error) {
 	switch codec {
 	case CodecNone:
 		return append([]byte(nil), in...), nil
 	case CodecGzip:
-		return Gzip(in)
+		return Gzip(in, level)
 	case CodecSnappy:
 		return SnappyEncode(in)
 	case CodecLZ4:

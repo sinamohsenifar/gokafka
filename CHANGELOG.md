@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.8] - 2026-06-29
+
+### Added
+
+- **Configurable gzip compression level (KIP-390)** — `WithProducerCompressionLevel(n)` / `ProducerConfig.CompressionLevel` sets the gzip level (1=fastest … 9=smallest; 0=default). The pure-Go snappy/lz4/zstd encoders are fixed-strategy and ignore the level. Unit-tested (higher level ≤ lower-level size; all codecs round-trip).
+
 ## [0.25.7] - 2026-06-29
 
 ### Added

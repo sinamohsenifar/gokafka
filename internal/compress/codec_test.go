@@ -9,7 +9,7 @@ import (
 
 func TestGzipRoundTrip(t *testing.T) {
 	in := bytes.Repeat([]byte("kafka"), 100)
-	out, err := compress.Compress(compress.CodecGzip, in)
+	out, err := compress.Compress(compress.CodecGzip, 0, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func TestGzipRoundTrip(t *testing.T) {
 
 func TestSnappyIntegrationPayload(t *testing.T) {
 	in := bytes.Repeat([]byte("compressed-2-"), 32)
-	out, err := compress.Compress(compress.CodecSnappy, in)
+	out, err := compress.Compress(compress.CodecSnappy, 0, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestSnappyIntegrationPayload(t *testing.T) {
 
 func TestSnappyRoundTrip(t *testing.T) {
 	in := []byte("hello snappy compression for kafka records")
-	out, err := compress.Compress(compress.CodecSnappy, in)
+	out, err := compress.Compress(compress.CodecSnappy, 0, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestSnappyRoundTrip(t *testing.T) {
 
 func TestLZ4RoundTrip(t *testing.T) {
 	in := bytes.Repeat([]byte("lz4"), 200)
-	out, err := compress.Compress(compress.CodecLZ4, in)
+	out, err := compress.Compress(compress.CodecLZ4, 0, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestLZ4RoundTrip(t *testing.T) {
 
 func TestZstdRoundTrip(t *testing.T) {
 	in := bytes.Repeat([]byte("kafka-zstd-"), 48)
-	out, err := compress.Compress(compress.CodecZstd, in)
+	out, err := compress.Compress(compress.CodecZstd, 0, in)
 	if err != nil {
 		t.Fatal(err)
 	}

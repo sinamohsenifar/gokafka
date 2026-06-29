@@ -38,6 +38,13 @@ func WithProducerCompression(codec CompressionCodec) Option {
 	return func(c *Config) { c.Producer.Compression = codec }
 }
 
+// WithProducerCompressionLevel sets the compression level (KIP-390). It is
+// honored for gzip (1=fastest .. 9=smallest); the pure-Go snappy/lz4/zstd
+// encoders use a fixed level and ignore it. 0 = codec default.
+func WithProducerCompressionLevel(level int) Option {
+	return func(c *Config) { c.Producer.CompressionLevel = level }
+}
+
 // WithProducer merges producer settings into the client config.
 func WithProducer(ps ProducerConfig) Option {
 	return func(c *Config) {
@@ -46,6 +53,9 @@ func WithProducer(ps ProducerConfig) Option {
 		}
 		if ps.Compression != 0 {
 			c.Producer.Compression = ps.Compression
+		}
+		if ps.CompressionLevel != 0 {
+			c.Producer.CompressionLevel = ps.CompressionLevel
 		}
 		if ps.BatchSize > 0 {
 			c.Producer.BatchSize = ps.BatchSize
@@ -177,6 +187,7 @@ func NewConfig(brokers []string, opts ...Option) (Config, error) {
 type ProducerConfig struct {
 	Acks              Acks
 	Compression       CompressionCodec
+	CompressionLevel  int // KIP-390; honored for gzip, ignored by snappy/lz4/zstd. 0 = default
 	Idempotent        bool
 	TransactionalID   string
 	BatchSize         int

@@ -166,10 +166,11 @@ func (p *Producer) shouldResetProducerID(err error) bool {
 
 func (p *Producer) produceSettings(seq func(topic string, part int32) int32, pid *protocol.ProducerID, transactional bool) protocol.ProduceSettings {
 	settings := protocol.ProduceSettings{
-		Acks:          int16(p.client.cfg.Producer.Acks),
-		TimeoutMs:     30000,
-		Compression:   p.client.cfg.compressionByte(),
-		Transactional: transactional,
+		Acks:             int16(p.client.cfg.Producer.Acks),
+		TimeoutMs:        30000,
+		Compression:      p.client.cfg.compressionByte(),
+		CompressionLevel: p.client.cfg.Producer.CompressionLevel,
+		Transactional:    transactional,
 	}
 	if transactional {
 		settings.TransactionalID = p.client.cfg.transactionalID()
