@@ -46,7 +46,7 @@ const (
 const (
 	VerMetadata                int16 = 12
 	VerProduce                 int16 = 12
-	VerFetch                   int16 = 12
+	VerFetch                   int16 = 13
 	VerListOffsets             int16 = 3
 	VerOffsetCommit            int16 = 8
 	VerOffsetFetch             int16 = 6

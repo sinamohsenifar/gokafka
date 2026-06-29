@@ -10,6 +10,7 @@ import (
 
 type FetchPartition struct {
 	Topic       string
+	TopicID     wire.UUID // topic_id for Fetch v13+ (KIP-516); zero = resolve by name
 	Partition   int32
 	Offset      int64
 	LeaderEpoch int32 // current_leader_epoch (-1 = unknown / no fencing)
@@ -109,8 +110,13 @@ func encodeFetchRequestFlex(ver int16, partitions []FetchPartition, maxWaitMs, m
 	}
 	buf.WriteCompactArrayLen(len(order))
 	for _, topic := range order {
-		buf.WriteCompactString(topic)
 		parts := topics[topic]
+		if ver >= 13 {
+			// KIP-516: identify the topic by its UUID instead of its name.
+			buf.WriteUUID(parts[0].TopicID)
+		} else {
+			buf.WriteCompactString(topic)
+		}
 		buf.WriteCompactArrayLen(len(parts))
 		for _, p := range parts {
 			buf.WriteInt32(p.Partition)
@@ -139,9 +145,13 @@ func encodeFetchRequestFlex(ver int16, partitions []FetchPartition, maxWaitMs, m
 	return buf.Bytes()
 }
 
-func DecodeFetchResponse(ver int16, body []byte) ([]FetchedRecord, error) {
+// DecodeFetchResponse decodes a Fetch response. For v13+ (KIP-516) topics are
+// identified by UUID, so resolveTopic maps a topic id back to its name; it may
+// be nil for older versions. An unresolvable id yields ErrUnknownTopicID so the
+// caller can refresh metadata and retry.
+func DecodeFetchResponse(ver int16, body []byte, resolveTopic func(wire.UUID) (string, bool)) ([]FetchedRecord, error) {
 	if ver >= 12 {
-		return decodeFetchResponseFlex(ver, body)
+		return decodeFetchResponseFlex(ver, body, resolveTopic)
 	}
 	return decodeFetchResponseLegacy(ver, body)
 }
@@ -187,6 +197,9 @@ func decodeFetchResponseLegacy(ver int16, body []byte) ([]FetchedRecord, error) 
 			}
 			if errCode == 6 || errCode == 74 || errCode == 75 {
 				return nil, ErrLeaderEpochChanged
+			}
+			if errCode == 100 { // UNKNOWN_TOPIC_ID
+				return nil, ErrUnknownTopicID
 			}
 			if errCode != 0 {
 				return nil, fmt.Errorf("protocol: fetch partition error %d", errCode)
@@ -253,7 +266,7 @@ func readAbortedTransactions(buf *wire.Buffer) ([]abortedTxn, error) {
 	return out, nil
 }
 
-func decodeFetchResponseFlex(ver int16, body []byte) ([]FetchedRecord, error) {
+func decodeFetchResponseFlex(ver int16, body []byte, resolveTopic func(wire.UUID) (string, bool)) ([]FetchedRecord, error) {
 	buf := wire.FromBytes(body)
 	if _, err := buf.ReadInt32(); err != nil { // throttle_time_ms
 		return nil, err
@@ -272,9 +285,23 @@ func decodeFetchResponseFlex(ver int16, body []byte) ([]FetchedRecord, error) {
 	}
 	var out []FetchedRecord
 	for i := 1; i < int(nTopics); i++ {
-		topic, err := buf.ReadCompactString()
-		if err != nil {
-			return nil, err
+		var topic string
+		if ver >= 13 {
+			// KIP-516: the topic is identified by UUID; map it back to a name.
+			tid, err := buf.ReadUUID()
+			if err != nil {
+				return nil, err
+			}
+			name, ok := resolveTopic(tid)
+			if !ok {
+				return nil, ErrUnknownTopicID
+			}
+			topic = name
+		} else {
+			topic, err = buf.ReadCompactString()
+			if err != nil {
+				return nil, err
+			}
 		}
 		nParts, err := buf.ReadUvarint()
 		if err != nil {
@@ -294,6 +321,9 @@ func decodeFetchResponseFlex(ver int16, body []byte) ([]FetchedRecord, error) {
 			}
 			if errCode == 6 || errCode == 74 || errCode == 75 {
 				return nil, ErrLeaderEpochChanged
+			}
+			if errCode == 100 { // UNKNOWN_TOPIC_ID
+				return nil, ErrUnknownTopicID
 			}
 			if errCode != 0 {
 				return nil, fmt.Errorf("protocol: fetch partition error %d", errCode)

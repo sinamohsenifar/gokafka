@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.17] - 2026-06-29
+
+### Added
+
+- **Fetch v13 topic-id fetch (KIP-516).** Fetch is upgraded to v13, which identifies topics by UUID instead of name. The consumer resolves topic ids from cluster metadata, sends them in the fetch request, and maps the response back to names. On `UNKNOWN_TOPIC_ID` (the topic id is stale, e.g. after a delete/recreate) it refreshes metadata and retries — making long-running consumers robust to topic recreation, where name-based fetch could silently read a different topic. Falls back to name-based fetch on brokers below v13. (Metadata parsing, ShareFetch, and the next-gen KIP-848 consumer already used topic ids; this extends it to the classic fetch path.)
+
 ## [0.25.16] - 2026-06-29
 
 ### Added

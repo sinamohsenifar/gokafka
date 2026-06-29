@@ -72,10 +72,16 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 		if err != nil {
 			return nil, err
 		}
-		byNode[b.NodeID] = append(byNode[b.NodeID], protocol.FetchPartition{
+		fp := protocol.FetchPartition{
 			Topic: a.topic, Partition: a.partition, Offset: a.offset, MaxBytes: 1 << 20,
 			LeaderEpoch: c.client.cluster.LeaderEpoch(a.topic, a.partition),
-		})
+		}
+		// Fetch v13+ (KIP-516) identifies topics by UUID; resolve it from cluster
+		// metadata (refreshed on assignment). If unknown, refresh and retry.
+		if tid, ok := c.client.cluster.TopicIDByName(a.topic); ok {
+			fp.TopicID = tid
+		}
+		byNode[b.NodeID] = append(byNode[b.NodeID], fp)
 	}
 
 	isolation := int8(0)
@@ -94,7 +100,7 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 			if errors.Is(err, protocol.ErrRebalanceInProgress) {
 				return c.handleFetchRebalance(ctx)
 			}
-			if errors.Is(err, protocol.ErrLeaderEpochChanged) {
+			if errors.Is(err, protocol.ErrLeaderEpochChanged) || errors.Is(err, protocol.ErrUnknownTopicID) {
 				_ = c.client.cluster.Refresh(ctx, c.topics)
 				return nil, nil
 			}
@@ -122,7 +128,7 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 			if errors.Is(f.err, protocol.ErrRebalanceInProgress) {
 				return c.handleFetchRebalance(ctx)
 			}
-			if errors.Is(f.err, protocol.ErrLeaderEpochChanged) {
+			if errors.Is(f.err, protocol.ErrLeaderEpochChanged) || errors.Is(f.err, protocol.ErrUnknownTopicID) {
 				_ = c.client.cluster.Refresh(ctx, c.topics)
 				return nil, nil
 			}
@@ -162,7 +168,7 @@ func (c *Consumer) fetchFromBroker(
 		c.client.observe.Metrics.OnConsume(0, err)
 		return nil, err
 	}
-	fetched, err := protocol.DecodeFetchResponse(ver, rb)
+	fetched, err := protocol.DecodeFetchResponse(ver, rb, c.client.cluster.TopicNameByID)
 	if err != nil {
 		return nil, err
 	}

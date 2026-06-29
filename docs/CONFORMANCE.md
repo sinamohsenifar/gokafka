@@ -22,7 +22,7 @@ the broker at connect time, so a lower client ceiling still interoperates.
 | Key | API | GoKafka max | Kafka 4.3 max | Status |
 |----:|-----|:-----------:|:-------------:|:------:|
 | 0 | Produce | 12 | 13 | ✅ (v12; enables KIP-890 TV2 implicit partition add; KIP-951 leader hints) |
-| 1 | Fetch | 12 | 18 | ➖ (topic-name fetch; not topic-id fetch v13+) |
+| 1 | Fetch | 13 | 18 | ✅ (v13 topic-id fetch, KIP-516; refreshes metadata on UNKNOWN_TOPIC_ID) |
 | 2 | ListOffsets | 3 | 11 | ➖ (no current-leader-epoch, v4+) |
 | 3 | Metadata | 12 | 13 | ✅ |
 | 8 | OffsetCommit | 8 | 10 | ➖ |
@@ -108,6 +108,7 @@ internals), 88/89 Streams groups (KIP-1071).
 | KIP-1106 | Duration-based `auto.offset.reset` | ❌ (earliest/latest only) |
 | KIP-390 | Configurable producer compression level | ➖ (`WithProducerCompressionLevel` honored for gzip; pure-Go snappy/lz4/zstd are fixed-strategy and ignore it) |
 | KIP-848 RE2J | Server-side regex subscription | ✅ (`Client.ConsumerPattern(regex)`; next-gen protocol; broker resolves matching topics) |
+| KIP-516 | Topic IDs (Fetch by topic-id) | ✅ (Fetch v13 sends topic UUIDs resolved from metadata; refreshes + retries on UNKNOWN_TOPIC_ID — robust to topic delete/recreate. Metadata, ShareFetch and the next-gen consumer already use topic ids.) |
 | KIP-320 | Leader-epoch fencing | ➖ (Fetch sends `current_leader_epoch` from metadata and refreshes+retries on NOT_LEADER/FENCED/UNKNOWN_LEADER_EPOCH; full truncation detection via OffsetForLeaderEpoch API 23 is a follow-up) |
 | KIP-1139 / KIP-1258 | OAuth `jwt-bearer` grant / client-assertion | ➖ (token provider is pluggable; specific grants are caller-supplied) |
 
@@ -180,7 +181,7 @@ lifecycle management (compatibility checks, config, version listing, deletes).
 1. **OffsetForLeaderEpoch (KIP-320)** — leader-epoch *fencing* on Fetch is done; remaining: full *truncation detection* (query OffsetForLeaderEpoch API 23 on leader change) and committed-leader-epoch on offset commit/fetch.
 2. _(KIP-890 transactions v2 complete: implicit partition add on Produce v12 and EndTxn v5 epoch adoption with producer-id reuse across sequential transactions, all gated on `transaction.version >= 2`.)_
 3. **KIP-714 client metrics** — `GetTelemetrySubscriptions` / `PushTelemetry`.
-4. **Newer API revisions** — Fetch v13+ (topic IDs), ShareAcknowledge v2 (`RENEW`), OffsetFetch v8 (batched multi-group). (FindCoordinator flex v3 and OffsetFetch flex v6 done.)
+4. **Newer API revisions** — ShareAcknowledge v2 (`RENEW`, requires a Kafka 4.2+ broker — deferred until locally verifiable), OffsetFetch v8 (batched multi-group). (Fetch v13 topic-ids, FindCoordinator flex v3, OffsetFetch flex v6, Produce v12, EndTxn v5 done.)
 5. _(Consumer niceties closed: KIP-1106 `WithConsumeSince`, KIP-390 `WithProducerCompressionLevel`, KIP-848 RE2J `ConsumerPattern`.)_
 6. _(Schema Registry lifecycle complete: register/get, compatibility, config, versions, delete, `IsRegistered`, `Mode`/`SetMode`.)_
 

@@ -15,6 +15,11 @@ var ErrRebalanceInProgress = errors.New("protocol: rebalance in progress")
 // should refresh metadata and retry. KIP-320.
 var ErrLeaderEpochChanged = errors.New("protocol: partition leader or epoch changed")
 
+// ErrUnknownTopicID indicates a Fetch v13+ request referenced a topic id the
+// broker no longer knows (UNKNOWN_TOPIC_ID, code 100) — e.g. the topic was
+// deleted/recreated; the caller should refresh metadata and retry. KIP-516.
+var ErrUnknownTopicID = errors.New("protocol: unknown topic id")
+
 // ErrMemberIDRequired is returned when the broker assigns a member id (KIP-394); retry JoinGroup with that id.
 var ErrMemberIDRequired = errors.New("protocol: member id required")
 
