@@ -50,7 +50,7 @@ const (
 	VerListOffsets             int16 = 3
 	VerOffsetCommit            int16 = 8
 	VerOffsetFetch             int16 = 9 // negotiation ceiling (KIP-709 batched multi-group is v8+)
-	VerOffsetFetchSingle       int16 = 6 // single-group path the consumer pins (its v6 codec)
+	VerOffsetFetchSingle       int16 = 7 // single-group path the consumer pins (v7 adds require_stable, KIP-447)
 	VerOffsetFetchMultiGroup   int16 = 8 // batched multi-group OffsetFetch (KIP-709)
 	VerFindCoordinator         int16 = 3 // flexible (KIP-482 tagged fields); v3+ on all Kafka 3.4+ targets
 	VerJoinGroup               int16 = 6

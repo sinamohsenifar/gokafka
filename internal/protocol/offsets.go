@@ -17,17 +17,17 @@ type CommittedOffset struct {
 	ErrorCode int16
 }
 
-func EncodeOffsetFetchRequest(ver int16, group string, _ string, parts []OffsetFetchPartition) []byte {
+func EncodeOffsetFetchRequest(ver int16, group string, _ string, parts []OffsetFetchPartition, requireStable bool) []byte {
 	if ver <= 0 {
 		ver = VerOffsetFetchSingle
 	}
 	if ver >= 6 {
-		return encodeOffsetFetchRequestFlex(group, parts)
+		return encodeOffsetFetchRequestFlex(ver, group, parts, requireStable)
 	}
-	return encodeOffsetFetchRequestLegacy(group, parts)
+	return encodeOffsetFetchRequestLegacy(ver, group, parts, requireStable)
 }
 
-func encodeOffsetFetchRequestLegacy(group string, parts []OffsetFetchPartition) []byte {
+func encodeOffsetFetchRequestLegacy(ver int16, group string, parts []OffsetFetchPartition, requireStable bool) []byte {
 	buf := wire.NewBuffer(64)
 	buf.WriteString(group)
 	topics := map[string][]int32{}
@@ -43,16 +43,16 @@ func encodeOffsetFetchRequestLegacy(group string, parts []OffsetFetchPartition) 
 		buf.WriteString(topic)
 		writeInt32Array(buf, topics[topic])
 	}
-	if VerOffsetFetchSingle >= 5 {
-		buf.WriteBool(false) // require_stable
+	if ver >= 7 {
+		buf.WriteBool(requireStable) // require_stable (KIP-447, v7+)
 	}
 	return buf.Bytes()
 }
 
-func encodeOffsetFetchRequestFlex(group string, parts []OffsetFetchPartition) []byte {
-	// OffsetFetch request v6 (flexible): group_id, topics[name, partition_indexes[]],
-	// request tag. partition_indexes is a primitive int32 array (no per-element
-	// tag); each topic struct has a trailing tag. (require_stable is v7+ only.)
+func encodeOffsetFetchRequestFlex(ver int16, group string, parts []OffsetFetchPartition, requireStable bool) []byte {
+	// OffsetFetch flexible request: group_id, topics[name, partition_indexes[]],
+	// require_stable (v7+), request tag. partition_indexes is a primitive int32
+	// array (no per-element tag); each topic struct has a trailing tag.
 	buf := wire.NewBuffer(64)
 	buf.WriteCompactString(group)
 	topics := map[string][]int32{}
@@ -72,6 +72,9 @@ func encodeOffsetFetchRequestFlex(group string, parts []OffsetFetchPartition) []
 			buf.WriteInt32(part)
 		}
 		buf.WriteEmptyTagSection() // topic struct tag
+	}
+	if ver >= 7 {
+		buf.WriteBool(requireStable) // require_stable (KIP-447, v7+)
 	}
 	buf.WriteEmptyTagSection() // request tag
 	return buf.Bytes()

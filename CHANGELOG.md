@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.25] - 2026-06-29
+
+### Fixed
+
+- **Stable offset fetch for exactly-once consumers (KIP-447).** The consumer's committed-offset load now uses OffsetFetch **v7** with `require_stable=true`, so the broker blocks the response until any pending transactional offset commits resolve. This prevents a resuming consumer in an exactly-once pipeline from reading a stale committed offset (and thus reprocessing or skipping records) — a correctness invariant franz-go documents and enables by default. Non-transactional consumers are unaffected (no pending commits to wait on).
+
 ## [0.25.24] - 2026-06-29
 
 ### Changed
