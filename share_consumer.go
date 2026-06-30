@@ -428,7 +428,8 @@ func (s *ShareConsumer) fetchShare(ctx context.Context, broker int32, group, mem
 		out = append(out, Record{
 			Topic: fr.Topic, Partition: fr.Partition, Offset: fr.Offset,
 			Key: fr.Key, Value: fr.Value, Headers: fetchHeaders(fr.Headers),
-			Timestamp: time.UnixMilli(fr.Timestamp),
+			Timestamp:     time.UnixMilli(fr.Timestamp),
+			DeliveryCount: fr.DeliveryCount,
 		})
 		s.client.observe.Metrics.OnConsume(len(fr.Value), nil)
 	}

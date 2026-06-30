@@ -29,6 +29,9 @@ type FetchedRecord struct {
 	// an offset (so the consumer can advance past them) and must not be
 	// delivered to the application.
 	Control bool
+	// DeliveryCount is the KIP-932 share-group delivery attempt count, assigned
+	// from the ShareFetch acquired-records ranges (0 for regular fetches).
+	DeliveryCount int16
 }
 
 func EncodeFetchRequest(ver int16, _ string, partitions []FetchPartition, maxWaitMs int32, minBytes, maxBytes int32, isolationLevel int8) []byte {

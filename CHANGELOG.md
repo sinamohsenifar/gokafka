@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.12] - 2026-06-30
+
+### Added
+
+- **Share groups (KIP-932): expose `delivery_count` on `Record`.** `Record.DeliveryCount` now carries the share-group delivery attempt count — 1 on first delivery, incremented each time a record is re-acquired after a `Release` or an acquisition-lock timeout (0 for regular, non-share consumers). The ShareFetch decoder previously read the per-range `delivery_count` and discarded it; it now assigns it to each record by offset (from the `acquired_records` ranges). This gives applications the signal to build dead-letter logic — e.g. `Reject` a record once its `DeliveryCount` approaches the group's delivery-count limit (default 5). Found by the KIP-932 audit + the share-group-configuration research. Verified end-to-end: first delivery `DeliveryCount == 1`, redelivery after `Release` `== 2`.
+
 ## [0.26.11] - 2026-06-30
 
 ### Added

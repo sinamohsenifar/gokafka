@@ -153,6 +153,39 @@ func TestIntegrationShareReleaseRedelivers(t *testing.T) {
 	_ = share.Leave(ctx)
 }
 
+// TestIntegrationShareDeliveryCount: the KIP-932 delivery_count is surfaced on
+// Record and increments on redelivery after a Release (1 on first delivery, 2
+// after the record is released and re-acquired).
+func TestIntegrationShareDeliveryCount(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	c, topic := shareEnv(t, ctx, []string{"d1"})
+	share := c.ShareConsumer([]string{topic})
+
+	first := pollUntil(t, ctx, share, 1)
+	if len(first) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(first))
+	}
+	if first[0].DeliveryCount != 1 {
+		t.Fatalf("first delivery DeliveryCount = %d, want 1", first[0].DeliveryCount)
+	}
+	if err := share.Release(ctx, first...); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+
+	short, cancel2 := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel2()
+	again := pollUntil(t, short, share, 1)
+	if len(again) != 1 {
+		t.Fatalf("released record should be redelivered, got %d", len(again))
+	}
+	if again[0].DeliveryCount != 2 {
+		t.Fatalf("redelivered DeliveryCount = %d, want 2", again[0].DeliveryCount)
+	}
+	_ = share.Acknowledge(ctx, again...)
+	_ = share.Leave(ctx)
+}
+
 // TestIntegrationShareRejectNoRedelivery: a Rejected record is archived and not
 // redelivered.
 func TestIntegrationShareRejectNoRedelivery(t *testing.T) {

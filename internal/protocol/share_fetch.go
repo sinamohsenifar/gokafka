@@ -176,31 +176,43 @@ func DecodeShareFetchResponse(body []byte, topicName func(wire.UUID) (string, bo
 			if errCode != 0 {
 				return out, fmt.Errorf("protocol: share fetch partition %s-%d error %d", topic, part, errCode)
 			}
+			var recs []FetchedRecord
 			if len(records) > 0 {
-				recs, err := decodeRecordBatch(topic, part, records, nil)
+				recs, err = decodeRecordBatch(topic, part, records, nil)
 				if err != nil {
 					return out, err
 				}
-				out.Records = append(out.Records, recs...)
 			}
+			// acquired_records[]: each (first_offset, last_offset, delivery_count)
+			// range carries the KIP-932 delivery attempt count for the records it
+			// covers; assign it to the decoded records by offset.
 			nAcq, err := buf.ReadUvarint()
 			if err != nil {
 				return out, err
 			}
 			for k := 1; k < int(nAcq); k++ {
-				if _, err := buf.ReadInt64(); err != nil { // first_offset
+				first, err := buf.ReadInt64()
+				if err != nil {
 					return out, err
 				}
-				if _, err := buf.ReadInt64(); err != nil { // last_offset
+				last, err := buf.ReadInt64()
+				if err != nil {
 					return out, err
 				}
-				if _, err := buf.ReadInt16(); err != nil { // delivery_count
+				dc, err := buf.ReadInt16()
+				if err != nil {
 					return out, err
+				}
+				for i := range recs {
+					if recs[i].Offset >= first && recs[i].Offset <= last {
+						recs[i].DeliveryCount = dc
+					}
 				}
 				if err := buf.SkipTagSection(); err != nil { // acquired_records tags
 					return out, err
 				}
 			}
+			out.Records = append(out.Records, recs...)
 			if err := buf.SkipTagSection(); err != nil { // partition tags
 				return out, err
 			}
