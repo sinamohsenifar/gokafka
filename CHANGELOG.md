@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.5] - 2026-06-30
+
+### Added
+
+- **Delegation token admin (KIP-48, APIs 38–41).** `Admin.CreateDelegationToken`, `RenewDelegationToken`, `ExpireDelegationToken`, and `DescribeDelegationTokens` complete the authentication-admin surface that sarama exposes (delegation tokens are short-lived SCRAM credentials for worker/connector auth). GoKafka now implements 47 client-facing API keys. Integration-verified end-to-end against the broker (the wire codecs round-trip; the broker returns the expected auth error when delegation tokens aren't enabled on the listener).
+
 ## [0.26.4] - 2026-06-30
 
 ### Changed

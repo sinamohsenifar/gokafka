@@ -51,6 +51,14 @@ func ClientVersion(apiKey int16) int16 {
 		return VerAlterPartitionReassign
 	case APIListPartitionReassign:
 		return VerListPartitionReassign
+	case APICreateDelegationToken:
+		return VerCreateDelegationToken
+	case APIRenewDelegationToken:
+		return VerRenewDelegationToken
+	case APIExpireDelegationToken:
+		return VerExpireDelegationToken
+	case APIDescribeDelegationToken:
+		return VerDescribeDelegationToken
 	case APIDescribeLogDirs:
 		return VerDescribeLogDirs
 	case APIDescribeClientQuotas:

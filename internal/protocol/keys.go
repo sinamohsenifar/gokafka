@@ -24,6 +24,10 @@ const (
 	APIDescribeLogDirs         int16 = 35
 	APIDeleteRecords           int16 = 21
 	APIDeleteGroups            int16 = 42
+	APICreateDelegationToken   int16 = 38
+	APIRenewDelegationToken    int16 = 39
+	APIExpireDelegationToken   int16 = 40
+	APIDescribeDelegationToken int16 = 41
 	APIElectLeaders            int16 = 43
 	APIIncrementalAlterConfigs int16 = 44
 	APIAlterPartitionReassign  int16 = 45
@@ -69,6 +73,10 @@ const (
 	VerCreatePartitions        int16 = 2
 	VerDescribeLogDirs         int16 = 5
 	VerDeleteRecords           int16 = 2
+	VerCreateDelegationToken   int16 = 3
+	VerRenewDelegationToken    int16 = 2
+	VerExpireDelegationToken   int16 = 2
+	VerDescribeDelegationToken int16 = 3
 	VerElectLeaders            int16 = 2
 	VerAlterPartitionReassign  int16 = 0
 	VerListPartitionReassign   int16 = 0
