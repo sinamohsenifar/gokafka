@@ -1,18 +1,18 @@
 filters:
   and:
-    - 'type == "decision"'
+    - type == "decision"
 properties:
   status:
-    displayName: "Status"
+    displayName: Status
   updated:
-    displayName: "Updated"
+    displayName: Updated
 views:
   - type: table
-    name: "ADRs"
+    name: ADRs
+    groupBy:
+      property: status
+      direction: ASC
     order:
       - file.name
       - status
       - updated
-    groupBy:
-      property: status
-      direction: ASC

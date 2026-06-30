@@ -29,10 +29,10 @@ GoKafka's share-group (KIP-932) implementation audited against the [[Research: K
 ### MEDIUM
 - ✅ **FIXED (v0.26.10)** — No unsupported-broker guard in the ShareConsumer hot path (asymmetric with Admin) → opaque error on Redpanda / no-`share.version` brokers. `Poll` now returns a clear "broker does not support KIP-932 share groups … requires Apache Kafka 4.1+ with share.version >= 1" error; share API keys 76–79 named in `protocol.APIName`; integration test on the Redpanda + 3.9.2 lanes.
 - Acks never piggybacked on ShareFetch (extra round-trip; encoder already supports it).
-- `share.isolation.level` not settable for share groups (`WithIsolationLevel(ReadCommitted)` silently ignored).
-- `share.auto.offset.reset` only half-exposed (hard-coded `earliest`, gated on a bool; no `latest`/`by_duration`).
-- **No public GROUP-config write path** (root cause — Admin hard-codes topic resource) → all share group-configs unreachable.
-- `delivery_count` decoded then discarded (no redelivery/DLQ signal on `Record`).
+- ✅ **FIXED (v0.26.13)** — `share.isolation.level` not settable → now applied (`read_committed` when the consumer isolation level is ReadCommitted) on join via the GROUP-config path.
+- ✅ **FIXED (v0.26.13)** — `share.auto.offset.reset` only half-exposed → new `WithShareAutoOffsetReset("earliest"|"latest"|"by_duration:…")`; `WithConsumeFromBeginning` still forces earliest.
+- ✅ **FIXED (v0.26.13)** — **No public GROUP-config write path** (the root cause) → `Admin.AlterGroupConfigs` / `DescribeGroupConfigs` on the GROUP resource (type 32); `applyShareStartOffset` generalized to `applyShareGroupConfigs`. Verified end-to-end (`TestIntegrationAdminGroupConfigs`).
+- ✅ **FIXED (v0.26.12)** — `delivery_count` decoded then discarded → now surfaced on `Record.DeliveryCount` (1 on first delivery, +1 per re-acquire), for DLQ logic. Verified end-to-end.
 - No decode/round-trip unit tests for any share response; Poll-retry, session-error (122/123), rejoin/heartbeat/failover untested.
 
 ### LOW

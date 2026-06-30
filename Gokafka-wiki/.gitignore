@@ -13,3 +13,5 @@
 .smart-env
 # Plugin binaries (reinstalled by Obsidian; community-plugins.json lists them)
 .obsidian/plugins/
+# Volatile graph-view UI state (zoom/pan/color-groups change every session)
+.obsidian/graph.json
