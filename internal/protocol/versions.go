@@ -47,6 +47,10 @@ func ClientVersion(apiKey int16) int16 {
 		return VerDeleteRecords
 	case APIElectLeaders:
 		return VerElectLeaders
+	case APIAlterPartitionReassign:
+		return VerAlterPartitionReassign
+	case APIListPartitionReassign:
+		return VerListPartitionReassign
 	case APIDescribeLogDirs:
 		return VerDescribeLogDirs
 	case APIDescribeClientQuotas:

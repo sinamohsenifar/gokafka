@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.2] - 2026-06-30
+
+### Added
+
+- **Partition reassignment admin (KIP-455, API 45/46).** `Admin.AlterPartitionReassignments` moves partition replicas to new broker sets (nil replicas cancels an in-progress move), and `Admin.ListPartitionReassignments` returns the in-progress reassignments (current replicas + adding/removing). This is the partition-rebalancing surface sarama and kafka-go expose; GoKafka now implements 43 client-facing API keys.
+
 ## [0.26.1] - 2026-06-30
 
 ### Added

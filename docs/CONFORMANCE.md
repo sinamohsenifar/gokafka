@@ -16,7 +16,7 @@ version negotiation; newer revision unused) · ❌ not implemented · n/a broker
 
 ## 1. Protocol API coverage
 
-GoKafka implements **41** client-facing API keys. Versions are negotiated with
+GoKafka implements **43** client-facing API keys. Versions are negotiated with
 the broker at connect time, so a lower client ceiling still interoperates.
 
 | Key | API | GoKafka max | Kafka 4.3 max | Status |
@@ -55,6 +55,8 @@ the broker at connect time, so a lower client ceiling still interoperates.
 | 42 | DeleteGroups | 2 | 2 | ✅ |
 | 43 | ElectLeaders | 2 | 2 | ✅ |
 | 44 | IncrementalAlterConfigs | 0 | 1 | ➖ |
+| 45 | AlterPartitionReassignments | 0 | 0 | ✅ |
+| 46 | ListPartitionReassignments | 0 | 0 | ✅ |
 | 47 | OffsetDelete | 0 | 0 | ✅ |
 | 48 | DescribeClientQuotas | 1 | 1 | ✅ |
 | 49 | AlterClientQuotas | 1 | 1 | ✅ |
@@ -77,7 +79,6 @@ the broker at connect time, so a lower client ceiling still interoperates.
 | 23 | OffsetForLeaderEpoch | KIP-320 log-truncation detection (fencing already done: Fetch sends `current_leader_epoch`) | **Medium** (truncation detection on unclean failover) |
 | 71/72 | GetTelemetrySubscriptions / PushTelemetry | KIP-714 client metrics push — **deliberate non-goal** (see §5) | n/a (stdlib-only constraint) |
 | 75 | DescribeTopicPartitions | KIP-966 cursor-based metadata for very large clusters | Low (Metadata API 3 still works) |
-| 45/46 | Alter/ListPartitionReassignments | Partition reassignment admin | Low |
 | 38–41 | Delegation tokens | Create/Renew/Expire/Describe delegation token auth | Low (niche) |
 | 34 | AlterReplicaLogDirs | Move replicas between log dirs | Low |
 | 55, 57, 61, 64, 80, 81 | DescribeQuorum, UpdateFeatures, DescribeProducers, UnregisterBroker, Add/RemoveRaftVoter | KRaft/feature/admin operations | Low (operational tooling) |
