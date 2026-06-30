@@ -26,6 +26,8 @@ const (
 	APIDeleteGroups            int16 = 42
 	APIElectLeaders            int16 = 43
 	APIIncrementalAlterConfigs int16 = 44
+	APIAlterPartitionReassign  int16 = 45
+	APIListPartitionReassign   int16 = 46
 	APIOffsetDelete            int16 = 47
 	APIDescribeClientQuotas    int16 = 48
 	APIAlterClientQuotas       int16 = 49
@@ -68,6 +70,8 @@ const (
 	VerDescribeLogDirs         int16 = 5
 	VerDeleteRecords           int16 = 2
 	VerElectLeaders            int16 = 2
+	VerAlterPartitionReassign  int16 = 0
+	VerListPartitionReassign   int16 = 0
 	VerDescribeClientQuotas    int16 = 1
 	VerAlterClientQuotas       int16 = 1
 	VerDescribeUserScramCreds  int16 = 0

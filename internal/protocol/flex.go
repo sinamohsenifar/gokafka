@@ -70,6 +70,8 @@ func flexibleRequestHeader(apiKey, apiVersion int16) bool {
 		return apiVersion >= 2
 	case APIElectLeaders:
 		return apiVersion >= 2
+	case APIAlterPartitionReassign, APIListPartitionReassign:
+		return apiVersion >= 0
 	case APIDescribeLogDirs:
 		return apiVersion >= 2
 	case APIDescribeClientQuotas, APIAlterClientQuotas:
