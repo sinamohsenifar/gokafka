@@ -89,6 +89,52 @@ func pollUntil(t *testing.T, ctx context.Context, share *gokafka.ShareConsumer, 
 	return got
 }
 
+// TestIntegrationAdminGroupConfigs verifies the public GROUP-config write path:
+// AlterGroupConfigs sets share-group configs on the GROUP resource (type 32) and
+// DescribeGroupConfigs reads them back.
+func TestIntegrationAdminGroupConfigs(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	brokers := integrationBrokers(t)
+
+	probeCfg, _ := gokafka.NewConfig(brokers)
+	probe, err := gokafka.NewClient(probeCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := probe.NegotiatedAPIVersion(protocol.APIShareGroupHeartbeat); !ok || v == 0 {
+		probe.Close()
+		t.Skip("broker does not support KIP-932 / GROUP config resource (needs Kafka 4.1+)")
+	}
+	probe.Close()
+
+	cfg, _ := gokafka.NewConfig(brokers)
+	c, err := gokafka.NewClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	group := fmt.Sprintf("gokafka-grpcfg-%d", time.Now().UnixNano())
+	latest, readCommitted := "latest", "read_committed"
+	if err := c.Admin().AlterGroupConfigs(ctx, group, map[string]*string{
+		"share.auto.offset.reset": &latest,
+		"share.isolation.level":   &readCommitted,
+	}); err != nil {
+		t.Fatalf("AlterGroupConfigs: %v", err)
+	}
+	got, err := c.Admin().DescribeGroupConfigs(ctx, group)
+	if err != nil {
+		t.Fatalf("DescribeGroupConfigs: %v", err)
+	}
+	if got["share.auto.offset.reset"] != "latest" {
+		t.Fatalf("share.auto.offset.reset = %q, want latest", got["share.auto.offset.reset"])
+	}
+	if got["share.isolation.level"] != "read_committed" {
+		t.Fatalf("share.isolation.level = %q, want read_committed", got["share.isolation.level"])
+	}
+}
+
 // TestIntegrationShareUnsupportedBrokerClearError: on a broker without KIP-932
 // (no share.version, or Redpanda), a ShareConsumer must surface a clear
 // "does not support share groups" error instead of an opaque heartbeat failure

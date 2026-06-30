@@ -284,6 +284,56 @@ func (a *Admin) describeConfigs(ctx context.Context, resources []protocol.Config
 	return out, nil
 }
 
+// AlterGroupConfigs incrementally alters configuration on a GROUP config
+// resource (KIP-848, resource type 32) — including the KIP-932 share-group
+// configs share.auto.offset.reset, share.isolation.level, and
+// share.record.lock.duration.ms. A nil map value resets that config to its
+// default. Requires a broker that supports the GROUP config resource (Kafka 4.x).
+func (a *Admin) AlterGroupConfigs(ctx context.Context, group string, configs map[string]*string) error {
+	if err := a.client.requireOpen(); err != nil {
+		return err
+	}
+	if group == "" {
+		return fmt.Errorf("gokafka: group is required")
+	}
+	ver := a.client.cluster.NegotiatedVersion(protocol.APIIncrementalAlterConfigs, protocol.VerIncrementalAlterConfigs)
+	if ver < 0 {
+		ver = protocol.VerIncrementalAlterConfigs
+	}
+	alts := make([]protocol.ConfigAlteration, 0, len(configs))
+	for name, val := range configs {
+		alts = append(alts, protocol.ConfigAlteration{Name: name, Value: val})
+	}
+	body := protocol.EncodeIncrementalAlterConfigsRequest(ver, protocol.ConfigResourceGroup,
+		map[string][]protocol.ConfigAlteration{group: alts})
+	resp, err := a.requestAny(ctx, protocol.APIIncrementalAlterConfigs, ver, body)
+	if err != nil {
+		return err
+	}
+	code, err := protocol.DecodeIncrementalAlterConfigsResponse(ver, resp)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return newKafkaError(code, "", 0, "alter group configs failed")
+	}
+	return nil
+}
+
+// DescribeGroupConfigs returns the configuration of a GROUP config resource
+// (KIP-848, resource type 32) as name→value, including the share-group configs.
+func (a *Admin) DescribeGroupConfigs(ctx context.Context, group string) (map[string]string, error) {
+	raw, err := a.describeConfigs(ctx, []protocol.ConfigResource{{Type: protocol.ConfigResourceGroup, Name: group}})
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(raw[group]))
+	for _, e := range raw[group] {
+		out[e.Name] = e.Value
+	}
+	return out, nil
+}
+
 func (a *Admin) DescribeBrokerConfigs(ctx context.Context, brokerIDs ...int32) (map[int32][]ConfigEntry, error) {
 	resources := make([]protocol.ConfigResource, len(brokerIDs))
 	for i, id := range brokerIDs {

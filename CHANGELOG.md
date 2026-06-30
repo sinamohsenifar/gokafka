@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.13] - 2026-06-30
+
+### Added
+
+- **Public GROUP-config write path + settable share-group configs (KIP-932/KIP-848).** New `Admin.AlterGroupConfigs(ctx, group, map[string]*string)` and `Admin.DescribeGroupConfigs(ctx, group)` operate on the GROUP config resource (resource type 32) — the root-cause gap from the KIP-932 audit (config writes previously only reached topics, except a hard-coded `share.auto.offset.reset=earliest`). This makes every share-group config reachable: `share.isolation.level`, `share.auto.offset.reset`, `share.record.lock.duration.ms`, etc. A nil map value resets a config to its default.
+- **`share.isolation.level` and configurable `share.auto.offset.reset` for share consumers.** A `ShareConsumer` now applies both on join via the GROUP-config path: `share.isolation.level=read_committed` when the consumer's isolation level is `ReadCommitted` (was silently ignored), and `share.auto.offset.reset` from the new `WithShareAutoOffsetReset("earliest"|"latest"|"by_duration:…")` option (previously only `earliest`, hard-coded behind `WithConsumeFromBeginning`). `WithConsumeFromBeginning` still forces `earliest`.
+
+### Changed
+
+- `ShareConsumer`'s internal `applyShareStartOffset` is generalized to `applyShareGroupConfigs`, setting all needed `share.*` group configs in one `IncrementalAlterConfigs` call via the new public Admin path.
+
+### Tested
+
+- `TestIntegrationAdminGroupConfigs` verifies the round-trip end-to-end against a real broker: `AlterGroupConfigs` sets `share.auto.offset.reset=latest` + `share.isolation.level=read_committed`, and `DescribeGroupConfigs` reads them back.
+
 ## [0.26.12] - 2026-06-30
 
 ### Added

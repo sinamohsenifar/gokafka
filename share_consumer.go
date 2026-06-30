@@ -240,43 +240,42 @@ func (s *ShareConsumer) Poll(ctx context.Context) ([]Record, error) {
 	}
 }
 
-// applyShareStartOffset honours WithConsumeFromBeginning for share groups by
-// setting the group-level share.auto.offset.reset config to "earliest" before
-// the share-partition start offset is initialized on the first fetch. Without
-// this the broker default ("latest") is used and records produced before the
-// consumer joins are never delivered. It must run before the first ShareFetch.
-func (s *ShareConsumer) applyShareStartOffset(ctx context.Context) error {
-	if !s.client.cfg.Consumer.ConsumeFromBeginning {
+// applyShareGroupConfigs sets the KIP-932 share-group GROUP configs this consumer
+// needs before the first ShareFetch (the share-partition start offset is
+// initialized on first fetch, so these must be applied first):
+//   - share.auto.offset.reset — from WithShareAutoOffsetReset, or "earliest" when
+//     WithConsumeFromBeginning is set. Otherwise the broker default ("latest") is
+//     used and records produced before the consumer joins are never delivered.
+//   - share.isolation.level — "read_committed" when the consumer's isolation level
+//     is ReadCommitted, so the share group skips aborted-transaction records.
+//
+// These are group-level configs (shared by all members), written via
+// Admin.AlterGroupConfigs. No-op when nothing needs setting.
+func (s *ShareConsumer) applyShareGroupConfigs(ctx context.Context) error {
+	cfg := map[string]*string{}
+	reset := s.client.cfg.Consumer.ShareAutoOffsetReset
+	if reset == "" && s.client.cfg.Consumer.ConsumeFromBeginning {
+		reset = "earliest"
+	}
+	if reset != "" {
+		r := reset
+		cfg["share.auto.offset.reset"] = &r
+	}
+	if s.client.cfg.Consumer.IsolationLevel == IsolationReadCommitted {
+		v := "read_committed"
+		cfg["share.isolation.level"] = &v
+	}
+	if len(cfg) == 0 {
 		return nil
 	}
-	val := "earliest"
-	ver := s.client.cluster.NegotiatedVersion(protocol.APIIncrementalAlterConfigs, protocol.VerIncrementalAlterConfigs)
-	if ver < 0 {
-		ver = protocol.VerIncrementalAlterConfigs
-	}
-	body := protocol.EncodeIncrementalAlterConfigsRequest(ver, protocol.ConfigResourceGroup,
-		map[string][]protocol.ConfigAlteration{
-			s.group: {{Name: "share.auto.offset.reset", Value: &val}},
-		})
-	resp, err := s.client.cluster.RequestAny(ctx, protocol.APIIncrementalAlterConfigs, ver, body)
-	if err != nil {
-		return err
-	}
-	code, err := protocol.DecodeIncrementalAlterConfigsResponse(ver, resp)
-	if err != nil {
-		return err
-	}
-	if code != 0 {
-		return newKafkaError(code, "", 0, "set share.auto.offset.reset failed")
-	}
-	return nil
+	return s.client.Admin().AlterGroupConfigs(ctx, s.group, cfg)
 }
 
 func (s *ShareConsumer) joinShareGroup(ctx context.Context) error {
 	if err := s.client.cluster.Refresh(ctx, s.topics); err != nil {
 		return err
 	}
-	if err := s.applyShareStartOffset(ctx); err != nil {
+	if err := s.applyShareGroupConfigs(ctx); err != nil {
 		return err
 	}
 	coord, err := s.coordinator(ctx)

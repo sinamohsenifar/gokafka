@@ -111,6 +111,9 @@ func WithConsumer(cs ConsumerConfig) Option {
 		if cs.IsolationLevel != 0 {
 			c.Consumer.IsolationLevel = cs.IsolationLevel
 		}
+		if cs.ShareAutoOffsetReset != "" {
+			c.Consumer.ShareAutoOffsetReset = cs.ShareAutoOffsetReset
+		}
 		if cs.GroupInstanceID != "" {
 			c.Consumer.GroupInstanceID = cs.GroupInstanceID
 		}
@@ -142,6 +145,14 @@ func WithConsumeFromBeginning(enabled bool) Option {
 // precedence over WithConsumeFromBeginning.
 func WithConsumeSince(d time.Duration) Option {
 	return func(c *Config) { c.Consumer.OffsetResetDuration = d }
+}
+
+// WithShareAutoOffsetReset sets the KIP-932 share-group `share.auto.offset.reset`
+// applied when the ShareConsumer first joins: "earliest", "latest", or
+// "by_duration:PnDTnHnMn.nS". It is a group-level config shared by all members,
+// set via Admin.AlterGroupConfigs on join.
+func WithShareAutoOffsetReset(reset string) Option {
+	return func(c *Config) { c.Consumer.ShareAutoOffsetReset = reset }
 }
 
 // WithTransaction configures exactly-once transactional producer settings.
@@ -247,6 +258,11 @@ type ConsumerConfig struct {
 	GroupProtocol       GroupProtocol
 	IsolationLevel      IsolationLevel
 	GroupInstanceID     string
+	// ShareAutoOffsetReset sets the KIP-932 share-group `share.auto.offset.reset`
+	// group config applied when a ShareConsumer first joins: "earliest", "latest"
+	// (the broker default), or "by_duration:PnDTnHnMn.nS" (KIP-1106). Empty leaves
+	// it unset, though WithConsumeFromBeginning still forces "earliest".
+	ShareAutoOffsetReset string
 	// ShareAckMode selects implicit vs explicit acknowledgement for a KIP-932
 	// share consumer. Default (explicit) requires the caller to Accept/Release/
 	// Reject records; implicit auto-accepts the previous Poll batch on the next
