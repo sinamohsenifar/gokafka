@@ -143,8 +143,10 @@ GoKafka covers idempotent produce, transactions, consumer groups, admin, TLS/SAS
 
 ### Schema Registry
 
-- Confluent Schema Registry REST client (register, lookup, compatibility)
-- Confluent wire-format encode/decode for schema-id prefixed payloads
+- Confluent Schema Registry REST client (register, lookup, compatibility, modes, lifecycle)
+- Schema **references** for multi-file `.proto` imports and reused Avro/JSON types (`RegisterWithReferences`)
+- Confluent wire-format encode/decode for schema-id-prefixed payloads, including the Protobuf message-index framing (with `ExpectedSchemaID`/`AllowedSchemaIDs` decode guards)
+- Avro and JSON values are encoded in-library (pure Go); **Protobuf** uses the Confluent wire framing + registry integration around bytes you encode with `google.golang.org/protobuf` (a built-in Protobuf codec would require that runtime, which would break the zero-dependency guarantee — the same library every Go Kafka client relies on for Protobuf)
 
 ### Observability
 

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.11] - 2026-06-30
+
+### Added
+
+- **Schema Registry references (multi-file `.proto` imports, reused types).** New `schema.Reference` type and `Registry.RegisterWithReferences` / `IsCompatibleWithReferences` / `IsRegisteredWithReferences`, plus `SerdeConfig.References` and `SubjectVersion.References`. The `references` array is now sent on register/compatibility/lookup request bodies, so a Protobuf schema that `import`s another `.proto` (or an Avro/JSON schema reusing a named type registered under another subject) can be registered and compatibility-checked. Previously only self-contained schemas were registerable. `SchemaClient` gains `RegisterWithReferences` (implemented by `*Registry` and `MockRegistry`).
+- **Protobuf decode wire-schema-id guards.** `Serde.DecodeProtobuf` now applies the same `ExpectedSchemaID` / `AllowedSchemaIDs` / `PinRegisteredSchemaID` guards as `DecodeAvro` (shared via an internal `checkWireSchemaID`), instead of only stripping the Confluent framing.
+
+### Tested
+
+- **End-to-end Protobuf round-trip against a real registry** (`TestIntegrationSchemaProtobufRoundTrip`): registers a `.proto` (schemaType=PROTOBUF), wraps pre-encoded Protobuf bytes with Confluent framing (schema id + message indexes), and decodes back the same indexes and payload — Protobuf support is now verified, not asserted. Plus httptest unit tests proving the `references` array is actually emitted on the wire, and a unit test for the new Protobuf decode guard.
+
+### Notes
+
+- GoKafka frames and registers Protobuf but does not include a Protobuf *message* codec: `EncodeProtobuf` wraps bytes you encode with `google.golang.org/protobuf` (a built-in codec would require that runtime / `.proto` codegen and break the zero-dependency guarantee). This boundary — and the analogous "JSON Schema is framed but not validated" — is now documented in the README and the `schema` package docs. See the code-verified completeness audit in the project wiki.
+
 ## [0.26.10] - 2026-06-30
 
 ### Added

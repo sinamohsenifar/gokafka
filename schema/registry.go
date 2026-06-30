@@ -73,28 +73,51 @@ type schemaResponse struct {
 	Schema string `json:"schema"`
 }
 
+// Reference is a Schema Registry schema reference: a named dependency on another
+// already-registered schema. It is how a Protobuf schema that `import`s another
+// .proto, or an Avro/JSON schema that reuses a named type, is registered — the
+// registry resolves each reference by (subject, version) when registering,
+// checking compatibility, or serving the schema. Name is the import path / type
+// name exactly as it appears in the schema text.
+type Reference struct {
+	Name    string `json:"name"`
+	Subject string `json:"subject"`
+	Version int    `json:"version"`
+}
+
 // RegisterJSON registers a JSON schema and returns its ID.
 func (r *Registry) RegisterJSON(ctx context.Context, subject, schema string) (int, error) {
-	return r.register(ctx, subject, "JSON", schema)
+	return r.register(ctx, subject, "JSON", schema, nil)
 }
 
 // RegisterJSONSchema registers a JSON Schema document (alias for RegisterJSON with explicit type).
 func (r *Registry) RegisterJSONSchema(ctx context.Context, subject, schema string) (int, error) {
-	return r.register(ctx, subject, "JSON", schema)
+	return r.register(ctx, subject, "JSON", schema, nil)
 }
 
 // RegisterAvro registers an Avro schema.
 func (r *Registry) RegisterAvro(ctx context.Context, subject, schema string) (int, error) {
-	return r.register(ctx, subject, "AVRO", schema)
+	return r.register(ctx, subject, "AVRO", schema, nil)
 }
 
 // RegisterProtobuf registers a Protobuf schema.
 func (r *Registry) RegisterProtobuf(ctx context.Context, subject, schema string) (int, error) {
-	return r.register(ctx, subject, "PROTOBUF", schema)
+	return r.register(ctx, subject, "PROTOBUF", schema, nil)
 }
 
-func (r *Registry) register(ctx context.Context, subject, schemaType, schema string) (int, error) {
+// RegisterWithReferences registers a schema of the given type ("AVRO", "PROTOBUF",
+// or "JSON") that depends on other already-registered schemas, passed as
+// references. Use this for a multi-file .proto (each import is a reference) or any
+// schema that reuses a named type registered under another subject.
+func (r *Registry) RegisterWithReferences(ctx context.Context, subject, schemaType, schema string, refs []Reference) (int, error) {
+	return r.register(ctx, subject, schemaType, schema, refs)
+}
+
+func (r *Registry) register(ctx context.Context, subject, schemaType, schema string, refs []Reference) (int, error) {
 	body := map[string]any{"schemaType": schemaType, "schema": schema}
+	if len(refs) > 0 {
+		body["references"] = refs
+	}
 	var resp schemaResponse
 	path := "/subjects/" + escapeSubjectPath(subject) + "/versions"
 	if err := r.post(ctx, path, body, &resp); err != nil {
@@ -172,11 +195,12 @@ func TopicRecordNameStrategy(topic, recordName string, _ bool) string {
 
 // SubjectVersion is a registered schema version under a subject.
 type SubjectVersion struct {
-	Subject    string `json:"subject"`
-	ID         int    `json:"id"`
-	Version    int    `json:"version"`
-	Schema     string `json:"schema"`
-	SchemaType string `json:"schemaType,omitempty"`
+	Subject    string      `json:"subject"`
+	ID         int         `json:"id"`
+	Version    int         `json:"version"`
+	Schema     string      `json:"schema"`
+	SchemaType string      `json:"schemaType,omitempty"`
+	References []Reference `json:"references,omitempty"`
 }
 
 // ListSubjects returns all registered subjects.
@@ -214,12 +238,21 @@ func (r *Registry) SchemaByVersion(ctx context.Context, subject, version string)
 // IsCompatible reports whether schema is compatible under the subject's
 // configured rule, checked against the given version ("latest" if empty).
 func (r *Registry) IsCompatible(ctx context.Context, subject, version, schemaType, schema string) (bool, error) {
+	return r.IsCompatibleWithReferences(ctx, subject, version, schemaType, schema, nil)
+}
+
+// IsCompatibleWithReferences is IsCompatible for a schema that depends on other
+// registered schemas (e.g. an imported .proto), passed as references.
+func (r *Registry) IsCompatibleWithReferences(ctx context.Context, subject, version, schemaType, schema string, refs []Reference) (bool, error) {
 	if version == "" {
 		version = "latest"
 	}
 	body := map[string]any{"schema": schema}
 	if schemaType != "" {
 		body["schemaType"] = schemaType
+	}
+	if len(refs) > 0 {
+		body["references"] = refs
 	}
 	var out struct {
 		IsCompatible bool `json:"is_compatible"`
@@ -292,9 +325,18 @@ func (r *Registry) SetMode(ctx context.Context, subject, mode string) error {
 // existing subject/version/id and ok=true; if the schema or subject is not
 // found, ok is false with a nil error.
 func (r *Registry) IsRegistered(ctx context.Context, subject, schemaType, schema string) (SubjectVersion, bool, error) {
+	return r.IsRegisteredWithReferences(ctx, subject, schemaType, schema, nil)
+}
+
+// IsRegisteredWithReferences is IsRegistered for a schema that depends on other
+// registered schemas (e.g. an imported .proto), passed as references.
+func (r *Registry) IsRegisteredWithReferences(ctx context.Context, subject, schemaType, schema string, refs []Reference) (SubjectVersion, bool, error) {
 	body := map[string]any{"schema": schema}
 	if schemaType != "" {
 		body["schemaType"] = schemaType
+	}
+	if len(refs) > 0 {
+		body["references"] = refs
 	}
 	b, err := json.Marshal(body)
 	if err != nil {

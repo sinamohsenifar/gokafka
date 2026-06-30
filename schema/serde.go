@@ -26,11 +26,14 @@ type SerdeConfig struct {
 	Format  Format
 	// ProtobufMessageIndexes for FormatProtobuf (default [0]).
 	ProtobufMessageIndexes []int
-	// ExpectedSchemaID if > 0, DecodeAvro rejects wire schema IDs that differ.
+	// References are schema-registry references (e.g. imported .proto files)
+	// passed when the schema is registered by EnsureRegistered.
+	References []Reference
+	// ExpectedSchemaID if > 0, DecodeAvro/DecodeProtobuf reject wire schema IDs that differ.
 	ExpectedSchemaID int
-	// PinRegisteredSchemaID when true, DecodeAvro requires wire schema ID to match EnsureRegistered ID.
+	// PinRegisteredSchemaID when true, DecodeAvro/DecodeProtobuf require the wire schema ID to match the EnsureRegistered ID.
 	PinRegisteredSchemaID bool
-	// AllowedSchemaIDs if non-empty, DecodeAvro rejects wire schema IDs not in this list.
+	// AllowedSchemaIDs if non-empty, DecodeAvro/DecodeProtobuf reject wire schema IDs not in this list.
 	AllowedSchemaIDs []int
 }
 
@@ -44,6 +47,9 @@ type SchemaClient interface {
 	RegisterJSON(ctx context.Context, subject, schema string) (int, error)
 	RegisterJSONSchema(ctx context.Context, subject, schema string) (int, error)
 	RegisterProtobuf(ctx context.Context, subject, schema string) (int, error)
+	// RegisterWithReferences registers a schema (schemaType "AVRO"/"PROTOBUF"/"JSON")
+	// that depends on other registered schemas, e.g. an imported .proto.
+	RegisterWithReferences(ctx context.Context, subject, schemaType, schema string, refs []Reference) (int, error)
 	SchemaByID(ctx context.Context, id int) (string, error)
 }
 
@@ -75,18 +81,22 @@ func (s *Serde) EnsureRegistered(ctx context.Context, schemaText string) (int, e
 	}
 	var id int
 	var err error
-	switch s.cfg.Format {
-	case FormatAvro:
-		id, err = s.reg.RegisterAvro(ctx, s.cfg.Subject, schemaText)
-		if err == nil {
-			s.avro, err = avro.ParseRecordSchema(schemaText)
+	if len(s.cfg.References) > 0 {
+		id, err = s.reg.RegisterWithReferences(ctx, s.cfg.Subject, s.cfg.registrySchemaType(), schemaText, s.cfg.References)
+	} else {
+		switch s.cfg.Format {
+		case FormatAvro:
+			id, err = s.reg.RegisterAvro(ctx, s.cfg.Subject, schemaText)
+		case FormatProtobuf:
+			id, err = s.reg.RegisterProtobuf(ctx, s.cfg.Subject, schemaText)
+		case FormatJSONSchema:
+			id, err = s.reg.RegisterJSONSchema(ctx, s.cfg.Subject, schemaText)
+		default:
+			id, err = s.reg.RegisterJSON(ctx, s.cfg.Subject, schemaText)
 		}
-	case FormatProtobuf:
-		id, err = s.reg.RegisterProtobuf(ctx, s.cfg.Subject, schemaText)
-	case FormatJSONSchema:
-		id, err = s.reg.RegisterJSONSchema(ctx, s.cfg.Subject, schemaText)
-	default:
-		id, err = s.reg.RegisterJSON(ctx, s.cfg.Subject, schemaText)
+	}
+	if err == nil && s.cfg.Format == FormatAvro {
+		s.avro, err = avro.ParseRecordSchema(schemaText)
 	}
 	if err != nil {
 		return 0, err
@@ -94,6 +104,47 @@ func (s *Serde) EnsureRegistered(ctx context.Context, schemaText string) (int, e
 	s.id = id
 	s.schema = schemaText
 	return id, nil
+}
+
+// checkWireSchemaID applies the configured wire-schema-id guards
+// (ExpectedSchemaID / AllowedSchemaIDs / PinRegisteredSchemaID) to a decoded
+// schema id, shared by the Avro and Protobuf decode paths.
+func (s *Serde) checkWireSchemaID(wireID int) error {
+	if s.cfg.ExpectedSchemaID > 0 && wireID != s.cfg.ExpectedSchemaID {
+		return fmt.Errorf("schema: unexpected schema id %d", wireID)
+	}
+	if len(s.cfg.AllowedSchemaIDs) > 0 {
+		allowed := false
+		for _, id := range s.cfg.AllowedSchemaIDs {
+			if wireID == id {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return fmt.Errorf("schema: schema id %d not allowed", wireID)
+		}
+	}
+	s.mu.RLock()
+	registeredID := s.id
+	s.mu.RUnlock()
+	if s.cfg.PinRegisteredSchemaID && registeredID > 0 && wireID != registeredID {
+		return fmt.Errorf("schema: wire schema id %d does not match registered id %d", wireID, registeredID)
+	}
+	return nil
+}
+
+// registrySchemaType maps the serde Format to the Schema Registry schemaType
+// string ("AVRO"/"PROTOBUF"/"JSON") used when registering.
+func (c SerdeConfig) registrySchemaType() string {
+	switch c.Format {
+	case FormatAvro:
+		return "AVRO"
+	case FormatProtobuf:
+		return "PROTOBUF"
+	default:
+		return "JSON"
+	}
 }
 
 // EncodeAvro encodes a record map with Avro binary + Confluent wire.
@@ -119,26 +170,8 @@ func (s *Serde) DecodeAvro(ctx context.Context, data []byte) (map[string]any, er
 		return nil, err
 	}
 	wireID := int(h.SchemaID)
-	if s.cfg.ExpectedSchemaID > 0 && wireID != s.cfg.ExpectedSchemaID {
-		return nil, fmt.Errorf("schema: unexpected schema id %d", wireID)
-	}
-	if len(s.cfg.AllowedSchemaIDs) > 0 {
-		allowed := false
-		for _, id := range s.cfg.AllowedSchemaIDs {
-			if wireID == id {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return nil, fmt.Errorf("schema: schema id %d not allowed", wireID)
-		}
-	}
-	s.mu.RLock()
-	registeredID := s.id
-	s.mu.RUnlock()
-	if s.cfg.PinRegisteredSchemaID && registeredID > 0 && wireID != registeredID {
-		return nil, fmt.Errorf("schema: wire schema id %d does not match registered id %d", wireID, registeredID)
+	if err := s.checkWireSchemaID(wireID); err != nil {
+		return nil, err
 	}
 	text, err := s.reg.SchemaByID(ctx, wireID)
 	if err != nil {
@@ -229,10 +262,20 @@ func (s *Serde) EncodeProtobuf(ctx context.Context, schemaText string, protoPayl
 	return srwire.EncodeProtobuf(int32(id), s.cfg.ProtobufMessageIndexes, protoPayload), nil
 }
 
-// DecodeProtobuf strips Confluent Protobuf framing.
+// DecodeProtobuf strips Confluent Protobuf framing and returns the message
+// indexes and the (still Protobuf-encoded) payload. It applies the same
+// wire-schema-id guards as DecodeAvro (ExpectedSchemaID / AllowedSchemaIDs /
+// PinRegisteredSchemaID). The caller decodes the Protobuf payload itself, using
+// the indexes to select the message type.
 func (s *Serde) DecodeProtobuf(data []byte) ([]int, []byte, error) {
-	_, indexes, payload, err := srwire.DecodeProtobuf(data)
-	return indexes, payload, err
+	h, indexes, payload, err := srwire.DecodeProtobuf(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := s.checkWireSchemaID(int(h.SchemaID)); err != nil {
+		return nil, nil, err
+	}
+	return indexes, payload, nil
 }
 
 // SchemaID returns the cached schema ID after registration.

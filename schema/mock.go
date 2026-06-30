@@ -67,6 +67,13 @@ func (m *MockRegistry) RegisterProtobuf(_ context.Context, subject, schema strin
 	return m.register(subject, "PROTOBUF", schema)
 }
 
+// RegisterWithReferences registers a schema of the given type with references.
+// The in-memory mock accepts and stores the schema like any other (it does not
+// resolve imports), so serde round-trips that pass References still work offline.
+func (m *MockRegistry) RegisterWithReferences(_ context.Context, subject, schemaType, schema string, _ []Reference) (int, error) {
+	return m.register(subject, schemaType, schema)
+}
+
 // SchemaByID returns the schema text for an id, or an error if unknown.
 func (m *MockRegistry) SchemaByID(_ context.Context, id int) (string, error) {
 	m.mu.Lock()
