@@ -554,13 +554,21 @@ func decodeDescribeConfigsFlex(version int16, body []byte) (map[string][]ConfigE
 					return nil, err
 				}
 				for k := 1; k < int(nSyn); k++ {
-					if _, err := buf.ReadCompactString(); err != nil {
+					if _, err := buf.ReadCompactString(); err != nil { // synonym name
 						return nil, err
 					}
-					if _, err := buf.ReadCompactNullableString(); err != nil {
+					if _, err := buf.ReadCompactNullableString(); err != nil { // synonym value
 						return nil, err
 					}
-					if _, err := buf.ReadInt8(); err != nil {
+					if _, err := buf.ReadInt8(); err != nil { // synonym source
+						return nil, err
+					}
+					// Each synonym struct carries a trailing tag section in the
+					// flexible encoding. Omitting this skip desyncs the stream
+					// whenever a config has synonyms (an overridden config with a
+					// cluster-default synonym — common on Redpanda, and on Kafka
+					// for any non-default config).
+					if err := buf.SkipTagSection(); err != nil {
 						return nil, err
 					}
 				}

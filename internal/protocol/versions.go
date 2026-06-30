@@ -110,6 +110,6 @@ func ClientVersion(apiKey int16) int16 {
 	case APIShareAcknowledge:
 		return VerShareAcknowledge
 	default:
-		return 0
+		return -1 // API the client does not implement (distinct from a v0 API)
 	}
 }

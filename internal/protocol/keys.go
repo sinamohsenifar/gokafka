@@ -1,5 +1,7 @@
 package protocol
 
+import "fmt"
+
 // Kafka request API keys (see kafka.apache.org/protocol).
 const (
 	APIProduce                 int16 = 0
@@ -98,3 +100,47 @@ const (
 	VerShareFetch              int16 = 2
 	VerShareAcknowledge        int16 = 2 // v2 adds is_renew_ack (KIP-1222); negotiated down to v1 on older brokers
 )
+
+// APIName returns a human-readable name for an API key, for error messages.
+func APIName(apiKey int16) string {
+	switch apiKey {
+	case APIProduce:
+		return "Produce"
+	case APIFetch:
+		return "Fetch"
+	case APIListOffsets:
+		return "ListOffsets"
+	case APIMetadata:
+		return "Metadata"
+	case APIOffsetCommit:
+		return "OffsetCommit"
+	case APIOffsetFetch:
+		return "OffsetFetch"
+	case APIFindCoordinator:
+		return "FindCoordinator"
+	case APIElectLeaders:
+		return "ElectLeaders"
+	case APICreateDelegationToken:
+		return "CreateDelegationToken"
+	case APIRenewDelegationToken:
+		return "RenewDelegationToken"
+	case APIExpireDelegationToken:
+		return "ExpireDelegationToken"
+	case APIDescribeDelegationToken:
+		return "DescribeDelegationToken"
+	case APIListTransactions:
+		return "ListTransactions"
+	case APIDescribeTransactions:
+		return "DescribeTransactions"
+	case APIAlterPartitionReassign:
+		return "AlterPartitionReassignments"
+	case APIListPartitionReassign:
+		return "ListPartitionReassignments"
+	case APIDescribeUserScramCreds:
+		return "DescribeUserScramCredentials"
+	case APIAlterUserScramCreds:
+		return "AlterUserScramCredentials"
+	default:
+		return fmt.Sprintf("API%d", apiKey)
+	}
+}

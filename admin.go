@@ -16,6 +16,12 @@ func (a *Admin) requestAny(ctx context.Context, apiKey, ver int16, body []byte) 
 	if err := a.client.requireOpen(); err != nil {
 		return nil, err
 	}
+	if !a.client.cluster.AdvertisesAPI(apiKey) {
+		// The broker did not advertise this API (e.g. ElectLeaders or delegation
+		// tokens on Redpanda). Return a clear error instead of letting the broker
+		// reset the connection into an opaque EOF.
+		return nil, fmt.Errorf("gokafka: broker does not support API key %d (%s)", apiKey, protocol.APIName(apiKey))
+	}
 	return a.client.cluster.RequestAny(ctx, apiKey, ver, body)
 }
 

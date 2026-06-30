@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.6] - 2026-06-30
+
+### Fixed
+
+- **DescribeConfigs: parse config synonyms correctly.** The v4 flexible decoder was missing the trailing tag section on each config *synonym* struct, desyncing the response stream and failing with "buffer too short" whenever a config had synonyms. A freshly-created Kafka topic has no synonyms so this stayed latent; it surfaces on Redpanda (which returns synonyms for overridden topic configs) and on Kafka for any non-default config. Found via Redpanda testing.
+- **Version negotiation records v0-max APIs.** APIs a broker advertises with a maximum version of 0 (e.g. `ListTransactions` on Redpanda) were dropped from the negotiated set, so the client fell back to its own higher version and the broker reset the connection (opaque EOF). Such APIs are now negotiated to v0 correctly. `ClientVersion` returns `-1` for unimplemented APIs to distinguish them from genuine v0 support.
+
+### Changed
+
+- **Admin calls to broker-unsupported APIs now return a clear error** instead of an opaque connection EOF. When the broker's ApiVersions response doesn't advertise an API (e.g. `ElectLeaders` or delegation tokens on Redpanda), `Admin` returns `"broker does not support API key N (Name)"`.
+
 ## [0.26.5] - 2026-06-30
 
 ### Added

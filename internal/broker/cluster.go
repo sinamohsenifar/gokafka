@@ -463,15 +463,34 @@ func (c *Cluster) NegotiateVersions(ctx context.Context, softwareVersion string)
 	negotiated := map[int16]int16{}
 	for _, v := range versions {
 		clientMax := protocol.ClientVersion(v.APIKey)
-		if clientMax == 0 {
+		// Skip APIs the client doesn't implement (ClientVersion returns -1), or
+		// whose broker-advertised minimum is above the client's ceiling. A v0 API
+		// (clientMax == 0) is supported and must be recorded.
+		if clientMax < 0 || clientMax < v.MinVersion {
 			continue
 		}
-		if ver := protocol.NegotiateVersion(versions, v.APIKey, clientMax); ver > 0 {
-			negotiated[v.APIKey] = ver
-		}
+		// Store the negotiated version even when it is 0: an API a broker
+		// advertises with max version 0 (e.g. ListTransactions on Redpanda)
+		// negotiates to v0, and that MUST override the client's higher default —
+		// otherwise the client sends a version the broker rejects (connection
+		// reset / opaque EOF).
+		negotiated[v.APIKey] = protocol.NegotiateVersion(versions, v.APIKey, clientMax)
 	}
 	c.apiVerMuLock(negotiated)
 	return nil
+}
+
+// AdvertisesAPI reports whether the broker advertised support for an API key in
+// its ApiVersions response. It returns true when versions are unknown (the map
+// is empty), so callers fall back to attempting the request.
+func (c *Cluster) AdvertisesAPI(apiKey int16) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if len(c.apiVersions) == 0 {
+		return true
+	}
+	_, ok := c.apiVersions[apiKey]
+	return ok
 }
 
 func (c *Cluster) apiVerMuLock(negotiated map[int16]int16) {
