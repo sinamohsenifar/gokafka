@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.16] - 2026-06-30
+
+### Added
+
+- **`Admin.AlterShareGroupOffsets` (API 91) and `Admin.DeleteShareGroupOffsets` (API 92)** — completing the KIP-932 share-group offset admin trio (with `DescribeShareGroupOffsets` from 0.26.15). `AlterShareGroupOffsets(group, map[topic]map[partition]startOffset)` resets a share group's start offsets (e.g. to 0 to reprocess a queue); `DeleteShareGroupOffsets(group, topics...)` removes a group's offsets for the given topics. Both require an empty group (no active members). New flexible-v0 wire codecs, layouts taken verbatim from the Apache Kafka 4.1 schemas, **verified end-to-end against a real broker** (consume→ack→leave→alter→describe→delete) and on the share-enabled CI lanes.
+
 ## [0.26.15] - 2026-06-30
 
 ### Added

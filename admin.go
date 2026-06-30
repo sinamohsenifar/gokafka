@@ -288,6 +288,62 @@ func (a *Admin) DescribeShareGroupOffsets(ctx context.Context, group string) ([]
 	return out, nil
 }
 
+// AlterShareGroupOffsets resets a KIP-932 share group's start offsets (SPSO) to
+// the given values, keyed topic → partition → start offset (e.g. reset to 0 to
+// reprocess a queue). The group must be empty (no active members). Requires a
+// broker with share groups enabled (Kafka 4.1+).
+func (a *Admin) AlterShareGroupOffsets(ctx context.Context, group string, offsets map[string]map[int32]int64) error {
+	if err := a.client.requireOpen(); err != nil {
+		return err
+	}
+	ver := a.client.cluster.NegotiatedVersion(protocol.APIAlterShareGroupOffsets, protocol.VerAlterShareGroupOffsets)
+	if ver < 0 {
+		ver = protocol.VerAlterShareGroupOffsets
+	}
+	body := protocol.EncodeAlterShareGroupOffsetsRequest(group, offsets)
+	rb, err := a.requestAny(ctx, protocol.APIAlterShareGroupOffsets, ver, body)
+	if err != nil {
+		return err
+	}
+	code, err := protocol.DecodeAlterShareGroupOffsetsResponse(rb)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return newKafkaError(code, "", 0, "alter share group offsets failed")
+	}
+	return nil
+}
+
+// DeleteShareGroupOffsets removes a KIP-932 share group's offsets for the given
+// topics (the group forgets its position for them). The group must be empty.
+// Requires a broker with share groups enabled (Kafka 4.1+).
+func (a *Admin) DeleteShareGroupOffsets(ctx context.Context, group string, topics ...string) error {
+	if err := a.client.requireOpen(); err != nil {
+		return err
+	}
+	if len(topics) == 0 {
+		return nil
+	}
+	ver := a.client.cluster.NegotiatedVersion(protocol.APIDeleteShareGroupOffsets, protocol.VerDeleteShareGroupOffsets)
+	if ver < 0 {
+		ver = protocol.VerDeleteShareGroupOffsets
+	}
+	body := protocol.EncodeDeleteShareGroupOffsetsRequest(group, topics)
+	rb, err := a.requestAny(ctx, protocol.APIDeleteShareGroupOffsets, ver, body)
+	if err != nil {
+		return err
+	}
+	code, err := protocol.DecodeDeleteShareGroupOffsetsResponse(rb)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return newKafkaError(code, "", 0, "delete share group offsets failed")
+	}
+	return nil
+}
+
 func (a *Admin) describeConfigs(ctx context.Context, resources []protocol.ConfigResource) (map[string][]ConfigEntry, error) {
 	if err := a.client.requireOpen(); err != nil {
 		return nil, err

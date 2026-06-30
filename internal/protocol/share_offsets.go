@@ -104,3 +104,139 @@ func DecodeDescribeShareGroupOffsetsResponse(body []byte) (int16, []ShareGroupOf
 	}
 	return groupErr, offsets, nil
 }
+
+// EncodeAlterShareGroupOffsetsRequest encodes API 91 (flexible v0): set the
+// share-partition start offset for each topic-partition of one group.
+func EncodeAlterShareGroupOffsetsRequest(group string, offsets map[string]map[int32]int64) []byte {
+	buf := wire.NewBuffer(64)
+	buf.WriteCompactString(group)
+	buf.WriteCompactArrayLen(len(offsets))
+	for topic, parts := range offsets {
+		buf.WriteCompactString(topic)
+		buf.WriteCompactArrayLen(len(parts))
+		for p, off := range parts {
+			buf.WriteInt32(p)
+			buf.WriteInt64(off)
+			buf.WriteEmptyTagSection() // partition tag
+		}
+		buf.WriteEmptyTagSection() // topic tag
+	}
+	buf.WriteEmptyTagSection() // request tag
+	return buf.Bytes()
+}
+
+// DecodeAlterShareGroupOffsetsResponse decodes API 91 (flexible v0), returning
+// the first non-zero error code (top-level or per-partition), 0 on success.
+func DecodeAlterShareGroupOffsetsResponse(body []byte) (int16, error) {
+	buf := wire.FromBytes(body)
+	if _, err := buf.ReadInt32(); err != nil { // throttle_time_ms
+		return 0, err
+	}
+	firstErr, err := buf.ReadInt16() // top-level error_code
+	if err != nil {
+		return 0, err
+	}
+	if _, err := buf.ReadCompactNullableString(); err != nil { // top-level error_message
+		return 0, err
+	}
+	nTopics, err := buf.ReadUvarint()
+	if err != nil {
+		return 0, err
+	}
+	for t := 1; t < int(nTopics); t++ {
+		if _, err := buf.ReadCompactString(); err != nil { // TopicName
+			return 0, err
+		}
+		if _, err := buf.ReadUUID(); err != nil { // TopicId
+			return 0, err
+		}
+		nParts, err := buf.ReadUvarint()
+		if err != nil {
+			return 0, err
+		}
+		for p := 1; p < int(nParts); p++ {
+			if _, err := buf.ReadInt32(); err != nil { // PartitionIndex
+				return 0, err
+			}
+			pErr, err := buf.ReadInt16()
+			if err != nil {
+				return 0, err
+			}
+			if _, err := buf.ReadCompactNullableString(); err != nil { // error_message
+				return 0, err
+			}
+			if err := buf.SkipTagSection(); err != nil { // partition tag
+				return 0, err
+			}
+			if pErr != 0 && firstErr == 0 {
+				firstErr = pErr
+			}
+		}
+		if err := buf.SkipTagSection(); err != nil { // topic tag
+			return 0, err
+		}
+	}
+	if err := buf.SkipTagSection(); err != nil { // response tag
+		return 0, err
+	}
+	return firstErr, nil
+}
+
+// EncodeDeleteShareGroupOffsetsRequest encodes API 92 (flexible v0): delete a
+// group's offsets for the given topics.
+func EncodeDeleteShareGroupOffsetsRequest(group string, topics []string) []byte {
+	buf := wire.NewBuffer(64)
+	buf.WriteCompactString(group)
+	buf.WriteCompactArrayLen(len(topics))
+	for _, topic := range topics {
+		buf.WriteCompactString(topic)
+		buf.WriteEmptyTagSection() // topic tag
+	}
+	buf.WriteEmptyTagSection() // request tag
+	return buf.Bytes()
+}
+
+// DecodeDeleteShareGroupOffsetsResponse decodes API 92 (flexible v0), returning
+// the first non-zero error code (top-level or per-topic), 0 on success.
+func DecodeDeleteShareGroupOffsetsResponse(body []byte) (int16, error) {
+	buf := wire.FromBytes(body)
+	if _, err := buf.ReadInt32(); err != nil { // throttle_time_ms
+		return 0, err
+	}
+	firstErr, err := buf.ReadInt16() // top-level error_code
+	if err != nil {
+		return 0, err
+	}
+	if _, err := buf.ReadCompactNullableString(); err != nil { // top-level error_message
+		return 0, err
+	}
+	nTopics, err := buf.ReadUvarint()
+	if err != nil {
+		return 0, err
+	}
+	for t := 1; t < int(nTopics); t++ {
+		if _, err := buf.ReadCompactString(); err != nil { // TopicName
+			return 0, err
+		}
+		if _, err := buf.ReadUUID(); err != nil { // TopicId
+			return 0, err
+		}
+		tErr, err := buf.ReadInt16()
+		if err != nil {
+			return 0, err
+		}
+		if _, err := buf.ReadCompactNullableString(); err != nil { // error_message
+			return 0, err
+		}
+		if err := buf.SkipTagSection(); err != nil { // topic tag
+			return 0, err
+		}
+		if tErr != 0 && firstErr == 0 {
+			firstErr = tErr
+		}
+	}
+	if err := buf.SkipTagSection(); err != nil { // response tag
+		return 0, err
+	}
+	return firstErr, nil
+}

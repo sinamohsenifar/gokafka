@@ -161,6 +161,93 @@ func TestIntegrationAdminDescribeShareGroupOffsets(t *testing.T) {
 	}
 }
 
+// TestIntegrationAdminAlterDeleteShareGroupOffsets verifies the AlterShareGroupOffsets
+// (API 91) and DeleteShareGroupOffsets (API 92) wire codecs round-trip against a
+// real broker: consume+ack+leave (group becomes empty), reset the SPSO, confirm
+// via Describe, then delete.
+func TestIntegrationAdminAlterDeleteShareGroupOffsets(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	brokers := integrationBrokers(t)
+
+	probeCfg, _ := gokafka.NewConfig(brokers)
+	probe, err := gokafka.NewClient(probeCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supported, _ := probe.SupportsAPI(ctx, protocol.APIAlterShareGroupOffsets, 0)
+	probe.Close()
+	if !supported {
+		t.Skip("broker does not advertise AlterShareGroupOffsets (API 91)")
+	}
+
+	topic := fmt.Sprintf("gokafka-aso-%d", time.Now().UnixNano())
+	group := fmt.Sprintf("gokafka-aso-grp-%d", time.Now().UnixNano())
+
+	adminCfg, _ := gokafka.NewConfig(brokers)
+	admin, err := gokafka.NewClient(adminCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.Admin().CreateTopic(ctx, topic, 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	integrationWaitPartitions(t, admin.Admin(), topic, 1)
+	t.Cleanup(func() {
+		_ = admin.Admin().DeleteTopics(context.Background(), topic)
+		admin.Close()
+	})
+
+	cfg, _ := gokafka.NewConfig(brokers, gokafka.WithShareGroup(group), gokafka.WithConsumeFromBeginning(true))
+	c, err := gokafka.NewClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := c.Producer().ProduceSync(ctx,
+		gokafka.Record{Topic: topic, Value: []byte("x")},
+		gokafka.Record{Topic: topic, Value: []byte("y")}); err != nil {
+		t.Fatal(err)
+	}
+	share := c.ShareConsumer([]string{topic})
+	recs := pollUntil(t, ctx, share, 1)
+	if len(recs) < 1 {
+		t.Fatalf("expected >=1 record, got %d", len(recs))
+	}
+	_ = share.Acknowledge(ctx, recs...)
+	if err := share.Leave(ctx); err != nil {
+		t.Fatalf("leave: %v", err)
+	}
+
+	// Alter/Delete require an empty group; the member may take a moment to drain
+	// after Leave, so retry briefly.
+	var alterErr error
+	for i := 0; i < 12; i++ {
+		alterErr = c.Admin().AlterShareGroupOffsets(ctx, group, map[string]map[int32]int64{topic: {0: 0}})
+		if alterErr == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if alterErr != nil {
+		t.Fatalf("AlterShareGroupOffsets: %v", alterErr)
+	}
+
+	offs, err := c.Admin().DescribeShareGroupOffsets(ctx, group)
+	if err != nil {
+		t.Fatalf("describe after alter: %v", err)
+	}
+	for _, o := range offs {
+		if o.Topic == topic && o.Partition == 0 && o.StartOffset != 0 {
+			t.Fatalf("after alter to 0, StartOffset = %d (want 0)", o.StartOffset)
+		}
+	}
+
+	if err := c.Admin().DeleteShareGroupOffsets(ctx, group, topic); err != nil {
+		t.Fatalf("DeleteShareGroupOffsets: %v", err)
+	}
+}
+
 // TestIntegrationAdminGroupConfigs verifies the public GROUP-config write path:
 // AlterGroupConfigs sets share-group configs on the GROUP resource (type 32) and
 // DescribeGroupConfigs reads them back.

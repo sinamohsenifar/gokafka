@@ -111,6 +111,10 @@ func ClientVersion(apiKey int16) int16 {
 		return VerShareAcknowledge
 	case APIDescribeShareGroupOffsets:
 		return VerDescribeShareGroupOffsets
+	case APIAlterShareGroupOffsets:
+		return VerAlterShareGroupOffsets
+	case APIDeleteShareGroupOffsets:
+		return VerDeleteShareGroupOffsets
 	default:
 		return -1 // API the client does not implement (distinct from a v0 API)
 	}
