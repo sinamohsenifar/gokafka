@@ -57,7 +57,7 @@ Several mature Kafka clients exist for Go. They differ mainly in dependencies, d
 | **Schema Registry client** | Yes (REST + wire) | Via plugins | No | No | Via schema registry client |
 | **Cross-client partitioners (murmur2 + CRC32)** | Yes | Yes | Yes | murmur2 | Yes |
 | **Consumer-group lag helper** | Yes | Yes (kadm) | Manual | Manual | Manual |
-| **In-memory test mocks** | Schema Registry | Yes (kfake) | No | Yes (mocks) | Yes (mock client) |
+| **In-memory test mocks** | Broker (`kfake`) + Schema Registry | Yes (kfake) | No | Yes (mocks) | Yes (mock client) |
 
 **When GoKafka fits well**
 
@@ -438,6 +438,25 @@ go run ./examples/transactions   # exactly-once (EOS) produce + commit
 go run ./examples/sharegroup     # KIP-932 share group (queue semantics)
 go run ./examples/schemaregistry # Avro serde — runs with no broker (in-memory registry)
 ```
+
+### Testing without a broker
+
+The [`kfake`](kfake) package is an in-process mock broker, so you can unit-test
+producer / consumer / admin code against the real client with no Docker or
+cluster:
+
+```go
+b, _ := kfake.NewBroker()
+defer b.Close()
+b.AddTopic("events", 1)
+
+cfg, _ := gokafka.NewConfig([]string{b.Addr()})
+client, _ := gokafka.NewClient(cfg)
+// produce, consume (groups), commit, admin, and lag all work against b
+```
+
+For Schema Registry serde tests, `schema.MockRegistry` is an in-memory registry
+with the identical `Serde` API.
 
 ---
 

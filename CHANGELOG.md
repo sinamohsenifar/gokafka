@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-06-30
+
+### Added
+
+- **In-process mock broker (`kfake` package).** A pure-Go, in-memory Kafka broker that speaks the wire protocol at the exact API versions the GoKafka client negotiates, so producer / consumer / admin code can be unit-tested against the **real client** with no Docker or cluster — the parity item every alternative ships (franz-go `kfake`, sarama `mocks`, confluent mock cluster). Supports connect (ApiVersions, Metadata), admin (Create/Delete topics), idempotent produce (InitProducerID + Produce), ListOffsets, Fetch, single-member consumer groups (FindCoordinator, Join/Sync/Heartbeat/Leave), offset commit/fetch (single + KIP-709 multi-group), so `ConsumerGroupLag` works too. The real client is the correctness oracle — every handler is exercised end-to-end (`b, _ := kfake.NewBroker(); cfg, _ := gokafka.NewConfig([]string{b.Addr()})`). For tests only: single-node, in-memory, not durable.
+
 ## [0.25.26] - 2026-06-29
 
 ### Added
