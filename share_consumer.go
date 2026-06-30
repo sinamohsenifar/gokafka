@@ -25,6 +25,51 @@ type ShareConsumer struct {
 	shareSession map[int32]int32 // broker node -> session epoch
 	hbCancel     context.CancelFunc
 	hbInterval   time.Duration // broker-negotiated heartbeat interval (guarded by mu)
+	// pendingAccept holds the records returned by the last Poll that still await
+	// implicit auto-acceptance (ShareAckImplicit only; guarded by mu).
+	pendingAccept []Record
+}
+
+// ackMode reports the configured share acknowledgement mode.
+func (s *ShareConsumer) ackMode() ShareAckMode { return s.client.cfg.Consumer.ShareAckMode }
+
+// trackDelivered records the batch returned by Poll for later implicit
+// auto-acceptance. No-op in explicit mode.
+func (s *ShareConsumer) trackDelivered(recs []Record) {
+	if s.ackMode() != ShareAckImplicit {
+		return
+	}
+	s.mu.Lock()
+	s.pendingAccept = append([]Record(nil), recs...)
+	s.mu.Unlock()
+}
+
+// clearPending drops the given records from the implicit auto-accept set after
+// the caller has explicitly terminal-acknowledged them (Accept/Release/Reject),
+// so they are not auto-accepted again on the next Poll. Renew leaves them in.
+func (s *ShareConsumer) clearPending(records []Record) {
+	if s.ackMode() != ShareAckImplicit {
+		return
+	}
+	type rk struct {
+		topic     string
+		partition int32
+		offset    int64
+	}
+	done := make(map[rk]struct{}, len(records))
+	for _, r := range records {
+		done[rk{r.Topic, r.Partition, r.Offset}] = struct{}{}
+	}
+	s.mu.Lock()
+	kept := make([]Record, 0, len(s.pendingAccept))
+	for _, p := range s.pendingAccept {
+		if _, removed := done[rk{p.Topic, p.Partition, p.Offset}]; removed {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	s.pendingAccept = kept
+	s.mu.Unlock()
 }
 
 type shareAssignment struct {
@@ -60,6 +105,20 @@ func (s *ShareConsumer) Poll(ctx context.Context) ([]Record, error) {
 		if err := s.joinShareGroup(ctx); err != nil {
 			s.client.observe.Metrics.OnConsume(0, err)
 			return nil, err
+		}
+	}
+
+	// Implicit acknowledgement: accept the records delivered by the previous Poll
+	// (minus any the caller explicitly handled) before acquiring the next batch.
+	if s.ackMode() == ShareAckImplicit {
+		s.mu.Lock()
+		prev := s.pendingAccept
+		s.pendingAccept = nil
+		s.mu.Unlock()
+		if len(prev) > 0 {
+			if err := s.acknowledge(ctx, protocol.ShareAckAccept, prev); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -104,18 +163,23 @@ func (s *ShareConsumer) Poll(ctx context.Context) ([]Record, error) {
 			}
 			out = append(out, recs...)
 			if len(out) >= maxPoll {
-				return out[:maxPoll], nil
+				out = out[:maxPoll]
+				s.trackDelivered(out)
+				return out, nil
 			}
 		}
 		if len(out) > 0 {
+			s.trackDelivered(out)
 			return out, nil
 		}
 		// No records yet: stop if the caller's context is done (returning empty,
-		// like a poll timeout), otherwise run another fetch round.
+		// like a poll timeout), otherwise wait briefly before the next fetch round.
+		// The short backoff avoids hammering the share-partition leader (and its
+		// connection) while the broker initializes share state / waits for data.
 		select {
 		case <-ctx.Done():
 			return nil, nil
-		default:
+		case <-time.After(50 * time.Millisecond):
 		}
 	}
 }
@@ -388,6 +452,11 @@ func (s *ShareConsumer) acknowledge(ctx context.Context, ackType protocol.ShareA
 		s.shareSession[broker] = epoch + 1
 		s.mu.Unlock()
 	}
+	// A terminal acknowledgement removes these records from the implicit
+	// auto-accept set; Renew keeps them (still in flight).
+	if ackType != protocol.ShareAckRenew {
+		s.clearPending(records)
+	}
 	return nil
 }
 
@@ -532,6 +601,17 @@ func (s *ShareConsumer) Leave(ctx context.Context) error {
 	s.mu.Unlock()
 	if memberID == "" {
 		return nil
+	}
+	// Implicit ack: accept any still-pending delivered records before leaving
+	// (best-effort — the session is about to end).
+	if s.ackMode() == ShareAckImplicit {
+		s.mu.Lock()
+		prev := s.pendingAccept
+		s.pendingAccept = nil
+		s.mu.Unlock()
+		if len(prev) > 0 {
+			_ = s.acknowledge(ctx, protocol.ShareAckAccept, prev)
+		}
 	}
 	coord, err := s.coordinator(ctx)
 	if err != nil {

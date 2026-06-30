@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.9] - 2026-06-30
+
+### Added
+
+- **Share-group acknowledgement modes (KIP-932): explicit and implicit.** `WithShareAcknowledgementMode(ShareAckExplicit|ShareAckImplicit)` selects how a `ShareConsumer` settles records. Explicit (the default) keeps today's behaviour — the application must call `Acknowledge`/`Release`/`Reject` for each batch. Implicit mirrors the Kafka client's `share.acknowledgement.mode=implicit`: the records returned by a `Poll` are automatically Accepted when the next `Poll` runs (or on `Leave`), so a simple consume loop settles delivered records without per-batch bookkeeping. Closes a GA-completeness gap found by the KIP-932 audit.
+
+### Fixed
+
+- **ShareConsumer.Poll: back off between empty fetch rounds.** When no records were available yet, `Poll` re-issued `ShareFetch` in a tight loop until its context expired, hammering the share-partition leader's connection (observed as `use of closed network connection` on a subsequent request). It now waits briefly (50ms) between empty rounds, or returns promptly when the caller's context is done.
+
+### Tested
+
+- Integration coverage for the core queue semantics that were previously untested: Release returns a record to the group and it is redelivered; Reject archives a record so it is not redelivered; implicit mode auto-accepts a delivered batch so a fresh consumer sees no redelivery.
+
 ## [0.26.8] - 2026-06-30
 
 ### Fixed
