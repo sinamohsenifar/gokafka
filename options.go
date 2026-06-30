@@ -18,6 +18,13 @@ func WithShareGroup(group string) Option {
 	return func(c *Config) { c.ShareGroup = group }
 }
 
+// WithShareAcknowledgementMode selects implicit or explicit acknowledgement for
+// a share consumer (KIP-932). Explicit (the default) requires Acknowledge/
+// Release/Reject; implicit auto-accepts the previous Poll batch on the next Poll.
+func WithShareAcknowledgementMode(mode ShareAckMode) Option {
+	return func(c *Config) { c.Consumer.ShareAckMode = mode }
+}
+
 // WithConsumerGroup sets the consumer group id.
 func WithConsumerGroup(group string) Option {
 	return func(c *Config) { c.ConsumerGroup = group }
@@ -240,7 +247,26 @@ type ConsumerConfig struct {
 	GroupProtocol       GroupProtocol
 	IsolationLevel      IsolationLevel
 	GroupInstanceID     string
+	// ShareAckMode selects implicit vs explicit acknowledgement for a KIP-932
+	// share consumer. Default (explicit) requires the caller to Accept/Release/
+	// Reject records; implicit auto-accepts the previous Poll batch on the next
+	// Poll (and on Leave), matching KafkaShareConsumer's default.
+	ShareAckMode ShareAckMode
 }
+
+// ShareAckMode is the KIP-932 share-consumer acknowledgement mode.
+type ShareAckMode int
+
+const (
+	// ShareAckExplicit requires the caller to acknowledge each record
+	// (Acknowledge/Release/Reject); unacknowledged records are redelivered when
+	// their acquisition lock expires. This is the default.
+	ShareAckExplicit ShareAckMode = iota
+	// ShareAckImplicit auto-accepts the records returned by the previous Poll
+	// when the next Poll (or Leave) runs, unless the caller explicitly
+	// acknowledged them first.
+	ShareAckImplicit
+)
 
 // PartitionAssignor selects the consumer group partition assignment strategy.
 type PartitionAssignor int

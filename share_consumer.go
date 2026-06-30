@@ -11,6 +11,14 @@ import (
 	"github.com/sinamohsenifar/gokafka/observe"
 )
 
+const (
+	// shareFetchMaxWaitMs is the broker-side long-poll for a ShareFetch round.
+	shareFetchMaxWaitMs = 500
+	// shareFetchSlack is reserved below the caller's deadline for the request
+	// round-trip and decode, so a fetch returns before the context expires.
+	shareFetchSlack = 250 * time.Millisecond
+)
+
 // ShareConsumer reads from topics using a KIP-932 share group (queue semantics).
 type ShareConsumer struct {
 	mu           sync.Mutex
@@ -24,7 +32,53 @@ type ShareConsumer struct {
 	assignments  []shareAssignment
 	shareSession map[int32]int32 // broker node -> session epoch
 	hbCancel     context.CancelFunc
+	hbDone       chan struct{} // closed when the heartbeat goroutine exits (guarded by mu)
 	hbInterval   time.Duration // broker-negotiated heartbeat interval (guarded by mu)
+	// pendingAccept holds the records returned by the last Poll that still await
+	// implicit auto-acceptance (ShareAckImplicit only; guarded by mu).
+	pendingAccept []Record
+}
+
+// ackMode reports the configured share acknowledgement mode.
+func (s *ShareConsumer) ackMode() ShareAckMode { return s.client.cfg.Consumer.ShareAckMode }
+
+// trackDelivered records the batch returned by Poll for later implicit
+// auto-acceptance. No-op in explicit mode.
+func (s *ShareConsumer) trackDelivered(recs []Record) {
+	if s.ackMode() != ShareAckImplicit {
+		return
+	}
+	s.mu.Lock()
+	s.pendingAccept = append([]Record(nil), recs...)
+	s.mu.Unlock()
+}
+
+// clearPending drops the given records from the implicit auto-accept set after
+// the caller has explicitly terminal-acknowledged them (Accept/Release/Reject),
+// so they are not auto-accepted again on the next Poll. Renew leaves them in.
+func (s *ShareConsumer) clearPending(records []Record) {
+	if s.ackMode() != ShareAckImplicit {
+		return
+	}
+	type rk struct {
+		topic     string
+		partition int32
+		offset    int64
+	}
+	done := make(map[rk]struct{}, len(records))
+	for _, r := range records {
+		done[rk{r.Topic, r.Partition, r.Offset}] = struct{}{}
+	}
+	s.mu.Lock()
+	kept := make([]Record, 0, len(s.pendingAccept))
+	for _, p := range s.pendingAccept {
+		if _, removed := done[rk{p.Topic, p.Partition, p.Offset}]; removed {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	s.pendingAccept = kept
+	s.mu.Unlock()
 }
 
 type shareAssignment struct {
@@ -63,6 +117,20 @@ func (s *ShareConsumer) Poll(ctx context.Context) ([]Record, error) {
 		}
 	}
 
+	// Implicit acknowledgement: accept the records delivered by the previous Poll
+	// (minus any the caller explicitly handled) before acquiring the next batch.
+	if s.ackMode() == ShareAckImplicit {
+		s.mu.Lock()
+		prev := s.pendingAccept
+		s.pendingAccept = nil
+		s.mu.Unlock()
+		if len(prev) > 0 {
+			if err := s.acknowledge(ctx, protocol.ShareAckAccept, prev); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	maxPoll := s.client.cfg.Consumer.MaxPollRecords
 	if maxPoll <= 0 {
 		maxPoll = 500
@@ -84,10 +152,27 @@ func (s *ShareConsumer) Poll(ctx context.Context) ([]Record, error) {
 	// empty even when data is available. Mirror KafkaShareConsumer.poll: keep
 	// running fetch rounds until records are acquired or the context ends.
 	for {
+		// Clamp each fetch's broker-side long-poll to the caller's remaining
+		// deadline. A ShareFetch the deadline interrupts mid-flight desyncs (and so
+		// closes) the broker connection; bounding the wait keeps the deadline
+		// landing in the backoff select below instead, for a clean empty return.
+		waitMs := shareFetchMaxWaitMs
+		if dl, ok := ctx.Deadline(); ok {
+			remain := time.Until(dl)
+			if remain <= shareFetchSlack {
+				return nil, nil // out of budget → empty, like a poll timeout
+			}
+			if b := int((remain - shareFetchSlack) / time.Millisecond); b < waitMs {
+				waitMs = b
+			}
+		}
 		var out []Record
 		for broker, parts := range byBroker {
-			recs, err := s.fetchShare(ctx, broker, group, memberID, parts, maxPoll-len(out))
+			recs, err := s.fetchShare(ctx, broker, group, memberID, parts, maxPoll-len(out), waitMs)
 			if err != nil {
+				if ctx.Err() != nil {
+					return nil, nil // caller's deadline/cancel → empty, like a poll timeout
+				}
 				if code, ok := protocol.APIErrorCode(err); ok {
 					switch code {
 					case 5, 6: // NOT_LEADER / LEADER_NOT_AVAILABLE
@@ -95,27 +180,35 @@ func (s *ShareConsumer) Poll(ctx context.Context) ([]Record, error) {
 						continue
 					case 122, 123: // SHARE_SESSION_NOT_FOUND / INVALID_SHARE_SESSION_EPOCH
 						s.resetShareSession(broker)
-						recs, err = s.fetchShare(ctx, broker, group, memberID, parts, maxPoll-len(out))
+						recs, err = s.fetchShare(ctx, broker, group, memberID, parts, maxPoll-len(out), waitMs)
 					}
 				}
 				if err != nil {
+					if ctx.Err() != nil {
+						return nil, nil
+					}
 					return nil, err
 				}
 			}
 			out = append(out, recs...)
 			if len(out) >= maxPoll {
-				return out[:maxPoll], nil
+				out = out[:maxPoll]
+				s.trackDelivered(out)
+				return out, nil
 			}
 		}
 		if len(out) > 0 {
+			s.trackDelivered(out)
 			return out, nil
 		}
 		// No records yet: stop if the caller's context is done (returning empty,
-		// like a poll timeout), otherwise run another fetch round.
+		// like a poll timeout), otherwise wait briefly before the next fetch round.
+		// The short backoff avoids hammering the share-partition leader (and its
+		// connection) while the broker initializes share state / waits for data.
 		select {
 		case <-ctx.Done():
 			return nil, nil
-		default:
+		case <-time.After(50 * time.Millisecond):
 		}
 	}
 }
@@ -270,7 +363,7 @@ func (s *ShareConsumer) applyShareAssignment(assign []protocol.TopicIDPartitions
 	return nil
 }
 
-func (s *ShareConsumer) fetchShare(ctx context.Context, broker int32, group, memberID string, parts []shareAssignment, maxRecords int) ([]Record, error) {
+func (s *ShareConsumer) fetchShare(ctx context.Context, broker int32, group, memberID string, parts []shareAssignment, maxRecords, maxWaitMs int) ([]Record, error) {
 	s.mu.Lock()
 	epoch := s.shareSession[broker]
 	s.mu.Unlock()
@@ -284,7 +377,7 @@ func (s *ShareConsumer) fetchShare(ctx context.Context, broker int32, group, mem
 	ver := s.client.cluster.NegotiatedVersion(protocol.APIShareFetch, protocol.VerShareFetch)
 	body := protocol.EncodeShareFetchRequest(ver, protocol.ShareFetchRequest{
 		GroupID: group, MemberID: memberID, ShareSessionEpoch: epoch,
-		MaxWaitMs: 500, MinBytes: 1, MaxBytes: 50 << 20, MaxRecords: int32(maxRecords), BatchSize: 1,
+		MaxWaitMs: int32(maxWaitMs), MinBytes: 1, MaxBytes: 50 << 20, MaxRecords: int32(maxRecords), BatchSize: 1,
 		Partitions: fetchParts,
 	})
 	rb, err := s.client.cluster.Request(ctx, broker, protocol.APIShareFetch, ver, body)
@@ -388,6 +481,11 @@ func (s *ShareConsumer) acknowledge(ctx context.Context, ackType protocol.ShareA
 		s.shareSession[broker] = epoch + 1
 		s.mu.Unlock()
 	}
+	// A terminal acknowledgement removes these records from the implicit
+	// auto-accept set; Renew keeps them (still in flight).
+	if ackType != protocol.ShareAckRenew {
+		s.clearPending(records)
+	}
 	return nil
 }
 
@@ -482,17 +580,32 @@ func (s *ShareConsumer) ensureShareHeartbeat() {
 		return
 	}
 	hbCtx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 	s.hbCancel = cancel
-	go s.shareHeartbeatLoop(hbCtx)
+	s.hbDone = done
+	go func() {
+		defer close(done)
+		s.shareHeartbeatLoop(hbCtx)
+	}()
 }
 
+// stopShareHeartbeat cancels the background heartbeat loop and waits for it to
+// exit. Waiting matters: the loop shares broker connections with Poll/Leave, and
+// on an error it may rejoin (refreshing metadata and invalidating connections).
+// Returning before it finishes would let it close a connection out from under a
+// concurrent Leave heartbeat (seen as "use of closed network connection").
 func (s *ShareConsumer) stopShareHeartbeat() {
 	s.mu.Lock()
 	cancel := s.hbCancel
+	done := s.hbDone
 	s.hbCancel = nil
+	s.hbDone = nil
 	s.mu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	if done != nil {
+		<-done
 	}
 }
 
@@ -513,7 +626,13 @@ func (s *ShareConsumer) shareHeartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			if ctx.Err() != nil {
+				return
+			}
 			if err := s.shareHeartbeat(ctx); err != nil {
+				if ctx.Err() != nil {
+					return // shutting down; don't rejoin or churn connections
+				}
 				s.client.observe.Log(ctx, observe.LevelWarn, "share heartbeat failed", observe.Error(err))
 				if s.shouldRejoinShare(err) {
 					_ = s.rejoinShare(ctx)
@@ -532,6 +651,17 @@ func (s *ShareConsumer) Leave(ctx context.Context) error {
 	s.mu.Unlock()
 	if memberID == "" {
 		return nil
+	}
+	// Implicit ack: accept any still-pending delivered records before leaving
+	// (best-effort — the session is about to end).
+	if s.ackMode() == ShareAckImplicit {
+		s.mu.Lock()
+		prev := s.pendingAccept
+		s.pendingAccept = nil
+		s.mu.Unlock()
+		if len(prev) > 0 {
+			_ = s.acknowledge(ctx, protocol.ShareAckAccept, prev)
+		}
 	}
 	coord, err := s.coordinator(ctx)
 	if err != nil {

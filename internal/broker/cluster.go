@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -334,18 +335,16 @@ func (c *Cluster) Request(ctx context.Context, nodeID int32, apiKey, apiVersion 
 		apiVersion = v
 	}
 	start := time.Now()
-	conn, err := c.Conn(ctx, nodeID)
-	if err != nil {
-		c.recordRequest(apiKey, time.Since(start), err)
-		return nil, err
-	}
-	resp, err := conn.Request(ctx, apiKey, apiVersion, body)
-	if err != nil {
-		if c.Security.SASLEnabled() && c.Security.SASL.TokenProvider != nil {
-			if reauthErr := conn.Reauthenticate(ctx); reauthErr == nil {
-				resp, err = conn.Request(ctx, apiKey, apiVersion, body)
-			}
-		}
+	resp, err := c.requestOnce(ctx, nodeID, apiKey, apiVersion, body)
+	// A pooled connection can be closed underneath us by a concurrent request to
+	// the same broker — e.g. a Poll/ShareFetch loop timing out on its own context
+	// invalidates the shared conn while a heartbeat is in flight (the leader and
+	// the group coordinator are the same node, hence the same conn, on a
+	// single-broker cluster). When the write never reached the broker and the
+	// caller's own context is still live, drop the dead conn and resend once.
+	if err != nil && errors.Is(err, transport.ErrNotSent) && ctx.Err() == nil {
+		c.Invalidate(nodeID)
+		resp, err = c.requestOnce(ctx, nodeID, apiKey, apiVersion, body)
 	}
 	if err != nil {
 		c.Invalidate(nodeID)
@@ -354,6 +353,23 @@ func (c *Cluster) Request(ctx context.Context, nodeID int32, apiKey, apiVersion 
 	}
 	c.recordRequest(apiKey, time.Since(start), nil)
 	return transport.ResponseBodyForAPI(resp, apiKey, apiVersion)
+}
+
+// requestOnce performs a single round-trip to nodeID, re-authenticating once if
+// a SASL session expired. It does not retry transport failures — Request layers
+// the connection-recovery retry on top.
+func (c *Cluster) requestOnce(ctx context.Context, nodeID int32, apiKey, apiVersion int16, body []byte) ([]byte, error) {
+	conn, err := c.Conn(ctx, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := conn.Request(ctx, apiKey, apiVersion, body)
+	if err != nil && c.Security.SASLEnabled() && c.Security.SASL.TokenProvider != nil {
+		if reauthErr := conn.Reauthenticate(ctx); reauthErr == nil {
+			resp, err = conn.Request(ctx, apiKey, apiVersion, body)
+		}
+	}
+	return resp, err
 }
 
 func (c *Cluster) seed(ctx context.Context) (*transport.Conn, error) {
