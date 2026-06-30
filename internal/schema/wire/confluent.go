@@ -28,6 +28,24 @@ func EncodeConfluent(schemaID int32, payload []byte) []byte {
 	return out
 }
 
+// EncodeHeaderID returns the 5-byte schema-id header value (magic 0 + big-endian
+// schema id) used in header-based framing, where the message payload itself
+// carries no prefix.
+func EncodeHeaderID(schemaID int32) []byte {
+	v := make([]byte, 5)
+	v[0] = byte(FormatConfluent)
+	binary.BigEndian.PutUint32(v[1:5], uint32(schemaID))
+	return v
+}
+
+// DecodeHeaderID parses a schema-id header value written by EncodeHeaderID.
+func DecodeHeaderID(v []byte) (int32, error) {
+	if len(v) < 5 || v[0] != byte(FormatConfluent) {
+		return 0, wire.ErrShortBuffer
+	}
+	return int32(binary.BigEndian.Uint32(v[1:5])), nil
+}
+
 // DecodeConfluent strips the Confluent prefix.
 func DecodeConfluent(b []byte) (Header, []byte, error) {
 	if len(b) < 5 {

@@ -113,6 +113,18 @@ func (r *Registry) SchemaByID(ctx context.Context, id int) (string, error) {
 	return resp.Schema, nil
 }
 
+// SchemaByGUID fetches schema text by its globally-unique id (GUID), the
+// content-addressed identifier newer Schema Registry versions expose alongside
+// the numeric id (GET /schemas/guids/{guid}).
+func (r *Registry) SchemaByGUID(ctx context.Context, guid string) (string, error) {
+	var resp schemaResponse
+	path := "/schemas/guids/" + guid
+	if err := r.get(ctx, path, &resp); err != nil {
+		return "", err
+	}
+	return resp.Schema, nil
+}
+
 // SubjectForTopic returns the default TopicNameStrategy subject for a topic:
 // "<topic>-value" (or "<topic>-key" when isKey is true). One schema per topic.
 func SubjectForTopic(topic string, isKey bool) string {

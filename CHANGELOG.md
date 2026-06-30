@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.3] - 2026-06-30
+
+### Added
+
+- **Header-based Schema Registry framing** (confluent-kafka-go parity): `Serde.EncodeAvroHeaderFramed` / `DecodeAvroHeaderFramed` carry the schema id in a Kafka record header (`SchemaIDHeaderKey(isKey)` → `__key_schema_id` / `__value_schema_id`) instead of the magic-byte payload prefix, leaving the message payload unframed. The default payload-prefix framing is unchanged.
+- **`Registry.SchemaByGUID`** — fetch schema text by its content-addressed GUID (`GET /schemas/guids/{guid}`), the identifier newer Schema Registry versions expose alongside the numeric id.
+
 ## [0.26.2] - 2026-06-30
 
 ### Added

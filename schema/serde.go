@@ -151,6 +151,53 @@ func (s *Serde) DecodeAvro(ctx context.Context, data []byte) (map[string]any, er
 	return avro.DecodeRecord(schema, payload)
 }
 
+// SchemaIDHeaderKey returns the Kafka record-header key that carries the schema
+// id under header-based framing: "__key_schema_id" for keys, "__value_schema_id"
+// for values. With header framing the message payload itself is unframed.
+func SchemaIDHeaderKey(isKey bool) string {
+	if isKey {
+		return "__key_schema_id"
+	}
+	return "__value_schema_id"
+}
+
+// EncodeAvroHeaderFramed encodes an Avro record without the magic-byte payload
+// prefix, returning the raw Avro payload and the 5-byte schema-id header value to
+// attach as a record header (see SchemaIDHeaderKey). This is the header-based
+// schema-id transport (an alternative to the default payload-prefix framing).
+func (s *Serde) EncodeAvroHeaderFramed(ctx context.Context, schemaText string, values map[string]any) (payload, headerValue []byte, err error) {
+	id, err := s.EnsureRegistered(ctx, schemaText)
+	if err != nil {
+		return nil, nil, err
+	}
+	s.mu.RLock()
+	schema := s.avro
+	s.mu.RUnlock()
+	payload, err = avro.EncodeRecord(schema, values)
+	if err != nil {
+		return nil, nil, err
+	}
+	return payload, srwire.EncodeHeaderID(int32(id)), nil
+}
+
+// DecodeAvroHeaderFramed decodes a header-framed Avro record: the schema id comes
+// from headerValue (a record header) and payload is the unframed Avro body.
+func (s *Serde) DecodeAvroHeaderFramed(ctx context.Context, payload, headerValue []byte) (map[string]any, error) {
+	id, err := srwire.DecodeHeaderID(headerValue)
+	if err != nil {
+		return nil, err
+	}
+	text, err := s.reg.SchemaByID(ctx, int(id))
+	if err != nil {
+		return nil, err
+	}
+	schema, err := avro.ParseRecordSchema(text)
+	if err != nil {
+		return nil, err
+	}
+	return avro.DecodeRecord(schema, payload)
+}
+
 // EncodeJSON encodes a JSON value with Confluent wire.
 func (s *Serde) EncodeJSON(ctx context.Context, schemaText string, v any) ([]byte, error) {
 	id, err := s.EnsureRegistered(ctx, schemaText)
