@@ -1,0 +1,29 @@
+filters:
+  not:
+    - file.inFolder("meta")
+formulas:
+  edited_days: '(now() - file.mtime).days.round(0)'
+properties:
+  type:
+    displayName: "Type"
+  updated:
+    displayName: "Updated"
+  formula.edited_days:
+    displayName: "Edited (days ago)"
+views:
+  - type: table
+    name: "All pages by type"
+    order:
+      - file.name
+      - type
+      - updated
+      - formula.edited_days
+    groupBy:
+      property: type
+      direction: ASC
+  - type: cards
+    name: "Gallery"
+    order:
+      - file.name
+      - type
+      - tags

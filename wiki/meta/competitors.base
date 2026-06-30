@@ -1,0 +1,21 @@
+filters:
+  and:
+    - 'type == "competitor"'
+    - file.name != "parity-matrix"
+properties:
+  license:
+    displayName: "License"
+  url:
+    displayName: "Repo"
+views:
+  - type: table
+    name: "Competitors"
+    order:
+      - file.name
+      - license
+      - url
+  - type: cards
+    name: "Cards"
+    order:
+      - file.name
+      - license

@@ -1,0 +1,11 @@
+{
+  "items": [
+    { "type": "file", "title": "🗺️ Index (Map of Content)", "path": "index.md" },
+    { "type": "file", "title": "📊 Dashboard", "path": "Dashboard.md" },
+    { "type": "file", "title": "🧭 Architecture canvas", "path": "meta/architecture-map.canvas" },
+    { "type": "file", "title": "📐 Conventions", "path": "meta/conventions.md" },
+    { "type": "file", "title": "📄 Repo docs ↔ wiki map", "path": "repo-docs.md" },
+    { "type": "file", "title": "🏁 Competitor parity matrix", "path": "competitors/parity-matrix.md" },
+    { "type": "file", "title": "🐼 Redpanda", "path": "compatibility/redpanda.md" }
+  ]
+}

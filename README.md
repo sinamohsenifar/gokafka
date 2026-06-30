@@ -475,17 +475,23 @@ with the identical `Serde` API.
 
 ## Documentation
 
+Start at the **[docs index](docs/README.md)**. Highlights:
+
 | Document | Contents |
 |----------|----------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layered design, request path, encoding, version negotiation, subsystems |
 | [docs/CONFORMANCE.md](docs/CONFORMANCE.md) | Protocol API / KIP / Schema Registry coverage vs Apache Kafka 4.3 |
 | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Tuning, benchmarks, best practices, and anti-patterns |
 | [docs/CAPABILITIES.md](docs/CAPABILITIES.md) | Connection types, serialization, use-case mapping |
 | [docs/KIPS.md](docs/KIPS.md) | Kafka Improvement Proposal coverage |
 | [docs/KAFKA_VERSIONS.md](docs/KAFKA_VERSIONS.md) | Broker version compatibility notes |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Go + Kafka release matrix |
+| [docs/REDPANDA.md](docs/REDPANDA.md) | Redpanda support (CI-verified) |
 | [docs/TESTING.md](docs/TESTING.md) | Test policy and local integration setup |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 | [SECURITY.md](SECURITY.md) | Security practices and reporting |
+
+A navigable Obsidian knowledge map is also maintained under [`wiki/`](wiki/index.md).
 
 ---
 

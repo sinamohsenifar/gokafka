@@ -1,0 +1,18 @@
+filters:
+  and:
+    - 'type == "decision"'
+properties:
+  status:
+    displayName: "Status"
+  updated:
+    displayName: "Updated"
+views:
+  - type: table
+    name: "ADRs"
+    order:
+      - file.name
+      - status
+      - updated
+    groupBy:
+      property: status
+      direction: ASC

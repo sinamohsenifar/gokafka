@@ -1,0 +1,42 @@
+{
+  "nodes": [
+    {"id":"title","type":"text","text":"# GoKafka — request flow\nPublic API → routing → transport → wire. Side: cross-cutting subsystems.","x":-690,"y":-180,"width":620,"height":90},
+
+    {"id":"g_public","type":"group","label":"Public API (package gokafka)","color":"4","x":-700,"y":-50,"width":1240,"height":210},
+    {"id":"g_route","type":"group","label":"Routing (internal/broker)","color":"5","x":-400,"y":200,"width":610,"height":200},
+    {"id":"g_transport","type":"group","label":"Transport (internal/transport)","color":"6","x":-250,"y":430,"width":360,"height":200},
+    {"id":"g_wire","type":"group","label":"Wire & protocol (internal/wire, internal/protocol)","color":"2","x":-400,"y":660,"width":610,"height":200},
+    {"id":"g_side","type":"group","label":"Cross-cutting","color":"3","x":600,"y":-50,"width":320,"height":910},
+
+    {"id":"prod","type":"file","file":"packages/producer.md","x":-680,"y":0,"width":260,"height":110},
+    {"id":"cons","type":"file","file":"packages/consumer.md","x":-390,"y":0,"width":260,"height":110},
+    {"id":"admin","type":"file","file":"packages/admin.md","x":-100,"y":0,"width":260,"height":110},
+    {"id":"txn","type":"file","file":"packages/transactions.md","x":240,"y":0,"width":260,"height":110},
+
+    {"id":"life","type":"file","file":"architecture/client-lifecycle.md","x":-370,"y":250,"width":260,"height":110},
+    {"id":"cluster","type":"file","file":"architecture/cluster-coordinator.md","x":-70,"y":250,"width":260,"height":110},
+
+    {"id":"trans","type":"file","file":"architecture/transport.md","x":-220,"y":480,"width":260,"height":110},
+
+    {"id":"wire","type":"file","file":"architecture/wire-protocol.md","x":-370,"y":710,"width":260,"height":110},
+    {"id":"flex","type":"file","file":"protocol/flexible-encoding.md","x":-70,"y":710,"width":260,"height":110},
+
+    {"id":"schema","type":"file","file":"packages/schema-registry.md","x":620,"y":0,"width":280,"height":110},
+    {"id":"kfake","type":"file","file":"packages/kfake-mock-broker.md","x":620,"y":190,"width":280,"height":110},
+    {"id":"obs","type":"file","file":"packages/observability.md","x":620,"y":380,"width":280,"height":110},
+    {"id":"negot","type":"file","file":"protocol/version-negotiation.md","x":620,"y":570,"width":280,"height":110},
+    {"id":"redpanda","type":"file","file":"compatibility/redpanda.md","x":620,"y":730,"width":280,"height":110}
+  ],
+  "edges": [
+    {"id":"e1","fromNode":"prod","fromSide":"bottom","toNode":"cluster","toSide":"top"},
+    {"id":"e2","fromNode":"cons","fromSide":"bottom","toNode":"cluster","toSide":"top"},
+    {"id":"e3","fromNode":"admin","fromSide":"bottom","toNode":"cluster","toSide":"top"},
+    {"id":"e4","fromNode":"txn","fromSide":"bottom","toNode":"cluster","toSide":"top"},
+    {"id":"e5","fromNode":"life","fromSide":"bottom","toNode":"cluster","toSide":"top","label":"connect"},
+    {"id":"e6","fromNode":"cluster","fromSide":"bottom","toNode":"trans","toSide":"top","label":"route to broker"},
+    {"id":"e7","fromNode":"trans","fromSide":"bottom","toNode":"wire","toSide":"top","label":"frame"},
+    {"id":"e8","fromNode":"wire","fromSide":"right","toNode":"flex","toSide":"left"},
+    {"id":"e9","fromNode":"negot","fromSide":"left","toNode":"cluster","toSide":"right","label":"versions"},
+    {"id":"e10","fromNode":"kfake","fromSide":"left","toNode":"wire","toSide":"right","label":"mirrors (tests)"}
+  ]
+}
