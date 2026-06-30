@@ -49,6 +49,8 @@ const (
 	APIShareGroupDescribe      int16 = 77
 	APIShareFetch              int16 = 78
 	APIShareAcknowledge        int16 = 79
+
+	APIDescribeShareGroupOffsets int16 = 90
 )
 
 // Negotiated API version caps (client max; broker may be lower).
@@ -99,6 +101,8 @@ const (
 	VerShareGroupDescribe      int16 = 1
 	VerShareFetch              int16 = 2
 	VerShareAcknowledge        int16 = 2 // v2 adds is_renew_ack (KIP-1222); negotiated down to v1 on older brokers
+
+	VerDescribeShareGroupOffsets int16 = 0
 )
 
 // APIName returns a human-readable name for an API key, for error messages.
@@ -148,6 +152,8 @@ func APIName(apiKey int16) string {
 		return "ShareFetch"
 	case APIShareAcknowledge:
 		return "ShareAcknowledge"
+	case APIDescribeShareGroupOffsets:
+		return "DescribeShareGroupOffsets"
 	default:
 		return fmt.Sprintf("API%d", apiKey)
 	}

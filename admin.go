@@ -243,6 +243,51 @@ func (a *Admin) DescribeShareGroups(ctx context.Context, groups ...string) ([]Sh
 	return out, nil
 }
 
+// ShareGroupOffset is a KIP-932 share group's start offset (SPSO) for one
+// partition — the position the group has consumed past.
+type ShareGroupOffset struct {
+	Topic        string
+	Partition    int32
+	StartOffset  int64
+	LeaderEpoch  int32
+	ErrorCode    ErrorCode
+	ErrorMessage string
+}
+
+// DescribeShareGroupOffsets returns the share-partition start offsets (SPSO) of a
+// KIP-932 share group — the per-partition position the group has consumed past.
+// Pair it with ListOffsets (latest) to compute share-group lag. Requires a broker
+// with share groups enabled (Kafka 4.1+); returns a clear error otherwise.
+func (a *Admin) DescribeShareGroupOffsets(ctx context.Context, group string) ([]ShareGroupOffset, error) {
+	if err := a.client.requireOpen(); err != nil {
+		return nil, err
+	}
+	ver := a.client.cluster.NegotiatedVersion(protocol.APIDescribeShareGroupOffsets, protocol.VerDescribeShareGroupOffsets)
+	if ver < 0 {
+		ver = protocol.VerDescribeShareGroupOffsets
+	}
+	body := protocol.EncodeDescribeShareGroupOffsetsRequest(group)
+	rb, err := a.requestAny(ctx, protocol.APIDescribeShareGroupOffsets, ver, body)
+	if err != nil {
+		return nil, err
+	}
+	code, raw, err := protocol.DecodeDescribeShareGroupOffsetsResponse(rb)
+	if err != nil {
+		return nil, err
+	}
+	if code != 0 {
+		return nil, newKafkaError(code, "", 0, "describe share group offsets failed")
+	}
+	out := make([]ShareGroupOffset, len(raw))
+	for i, o := range raw {
+		out[i] = ShareGroupOffset{
+			Topic: o.Topic, Partition: o.Partition, StartOffset: o.StartOffset,
+			LeaderEpoch: o.LeaderEpoch, ErrorCode: ErrorCode(o.ErrorCode), ErrorMessage: o.ErrorMessage,
+		}
+	}
+	return out, nil
+}
+
 func (a *Admin) describeConfigs(ctx context.Context, resources []protocol.ConfigResource) (map[string][]ConfigEntry, error) {
 	if err := a.client.requireOpen(); err != nil {
 		return nil, err

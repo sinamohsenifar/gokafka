@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.15] - 2026-06-30
+
+### Added
+
+- **`Admin.DescribeShareGroupOffsets` (KIP-932, API 90).** Returns a share group's per-partition start offsets (SPSO) — the position the group has consumed past — as `[]ShareGroupOffset{Topic, Partition, StartOffset, LeaderEpoch, ErrorCode, ErrorMessage}`. Pair it with `ListOffsets`/`Admin` latest offsets to compute share-group lag (the share-group analogue of `ConsumerGroupLag`). New flexible v0 wire codec registered for negotiation; returns a clear error on brokers that don't advertise the API. Verified end-to-end against the real-broker CI lanes.
+
 ## [0.26.14] - 2026-06-30
 
 ### Changed

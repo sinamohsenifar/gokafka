@@ -89,6 +89,78 @@ func pollUntil(t *testing.T, ctx context.Context, share *gokafka.ShareConsumer, 
 	return got
 }
 
+// TestIntegrationAdminDescribeShareGroupOffsets verifies the DescribeShareGroupOffsets
+// (API 90) wire codec round-trips against a real broker: it consumes + acknowledges
+// a record (advancing the share-partition start offset) then reads the offsets back.
+func TestIntegrationAdminDescribeShareGroupOffsets(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	brokers := integrationBrokers(t)
+
+	probeCfg, _ := gokafka.NewConfig(brokers)
+	probe, err := gokafka.NewClient(probeCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supported, _ := probe.SupportsAPI(ctx, protocol.APIDescribeShareGroupOffsets, 0)
+	probe.Close()
+	if !supported {
+		t.Skip("broker does not advertise DescribeShareGroupOffsets (API 90)")
+	}
+
+	topic := fmt.Sprintf("gokafka-sgo-%d", time.Now().UnixNano())
+	group := fmt.Sprintf("gokafka-sgo-grp-%d", time.Now().UnixNano())
+
+	adminCfg, _ := gokafka.NewConfig(brokers)
+	admin, err := gokafka.NewClient(adminCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.Admin().CreateTopic(ctx, topic, 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	integrationWaitPartitions(t, admin.Admin(), topic, 1)
+	t.Cleanup(func() {
+		_ = admin.Admin().DeleteTopics(context.Background(), topic)
+		admin.Close()
+	})
+
+	cfg, _ := gokafka.NewConfig(brokers, gokafka.WithShareGroup(group), gokafka.WithConsumeFromBeginning(true))
+	c, err := gokafka.NewClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := c.Producer().ProduceSync(ctx, gokafka.Record{Topic: topic, Value: []byte("x")}); err != nil {
+		t.Fatal(err)
+	}
+	share := c.ShareConsumer([]string{topic})
+	recs := pollUntil(t, ctx, share, 1)
+	if len(recs) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(recs))
+	}
+	if err := share.Acknowledge(ctx, recs...); err != nil {
+		t.Fatalf("ack: %v", err)
+	}
+	_ = share.Leave(ctx)
+
+	// Primary check: the RPC round-trips (encode/decode against a real broker).
+	offs, err := c.Admin().DescribeShareGroupOffsets(ctx, group)
+	if err != nil {
+		t.Fatalf("DescribeShareGroupOffsets: %v", err)
+	}
+	for _, o := range offs {
+		if o.Topic == topic && o.Partition == 0 {
+			if o.ErrorCode != 0 {
+				t.Fatalf("partition %s-0 error %d (%s)", topic, o.ErrorCode, o.ErrorMessage)
+			}
+			if o.StartOffset < 0 {
+				t.Fatalf("unexpected StartOffset %d for %s-0", o.StartOffset, topic)
+			}
+		}
+	}
+}
+
 // TestIntegrationAdminGroupConfigs verifies the public GROUP-config write path:
 // AlterGroupConfigs sets share-group configs on the GROUP resource (type 32) and
 // DescribeGroupConfigs reads them back.
