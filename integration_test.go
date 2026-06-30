@@ -153,7 +153,7 @@ func TestIntegrationDescribeCluster(t *testing.T) {
 	if len(desc.Brokers) == 0 {
 		t.Fatal("expected brokers")
 	}
-	if desc.ControllerID <= 0 {
+	if desc.ControllerID < 0 {
 		t.Fatalf("controller=%d", desc.ControllerID)
 	}
 }

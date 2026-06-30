@@ -34,6 +34,7 @@ func TestIntegrationDelegationTokens(t *testing.T) {
 	if err == nil {
 		t.Log("broker issued a delegation token (master key configured)")
 	} else {
+		skipIfUnsupportedAPI(t, err) // Redpanda does not implement delegation tokens
 		var ke *gokafka.KafkaError
 		if !errors.As(err, &ke) {
 			t.Fatalf("expected a broker KafkaError (wire codec ok), got %T: %v", err, err)

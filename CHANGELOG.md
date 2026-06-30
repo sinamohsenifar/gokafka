@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.26.6] - 2026-06-30
+## [0.26.7] - 2026-06-30
+
+### Added
+
+- **Redpanda compatibility, CI-verified.** A new CI lane runs the full integration suite against a real Redpanda broker every build, proving GoKafka works against the Kafka-API-compatible broker. The suite auto-skips APIs Redpanda doesn't implement (ElectLeaders, delegation tokens, KIP-848/932) and unconfigured TLS/SASL listeners. Redpanda's Confluent-compatible Schema Registry works with the `schema` package unchanged.
+
+### Fixed
+
+- **CreatePartitions: parse the per-topic `error_message`.** The v2 flexible decoder skipped the `error_message` field (reading only name + error_code before the tag section). This happened to work against Kafka when the message is null (the tag skip absorbed the single 0x00 byte) but desynced — "buffer too short" — against a broker that returns a non-null message (e.g. Redpanda). Same class as the 0.26.6 DescribeConfigs synonym fix.
+
+
 
 ### Fixed
 

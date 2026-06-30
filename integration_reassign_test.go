@@ -45,9 +45,15 @@ func TestIntegrationPartitionReassignments(t *testing.T) {
 		t.Fatalf("expected no ongoing reassignments, got %+v", ongoing)
 	}
 
-	// Reassigning partition 0 to its current replica (broker 1) is accepted.
+	// Reassign partition 0 to its current replica. Use a real broker id from the
+	// cluster (single-node Kafka is often 1, Redpanda is 0).
+	cluster, err := admin.DescribeCluster(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brokerID := cluster.Brokers[0].NodeID
 	results, err := admin.AlterPartitionReassignments(ctx, map[string]map[int32][]int32{
-		topic: {0: {1}},
+		topic: {0: {brokerID}},
 	})
 	if err != nil {
 		t.Fatalf("alter reassignments: %v", err)

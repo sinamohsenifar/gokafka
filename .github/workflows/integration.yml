@@ -115,3 +115,46 @@ jobs:
       - name: Stop stack
         if: always()
         run: docker compose down -v
+
+  # Redpanda is wire-compatible with the Kafka protocol. This lane proves GoKafka
+  # works against it: the suite passes, skipping APIs Redpanda does not implement
+  # (ElectLeaders, delegation tokens, KIP-848/932) and the TLS/SASL listeners,
+  # which aren't configured here.
+  redpanda:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Start Redpanda
+        run: |
+          set -euo pipefail
+          docker run -d --name redpanda \
+            -p 9092:9092 -p 8081:8081 \
+            redpandadata/redpanda:latest \
+            redpanda start --mode dev-container --smp 1 --overprovisioned \
+            --kafka-addr external://0.0.0.0:9092 \
+            --advertise-kafka-addr external://127.0.0.1:9092 \
+            --schema-registry-addr 0.0.0.0:8081
+          for i in $(seq 1 60); do
+            if docker exec redpanda rpk cluster health 2>/dev/null | grep -q "Healthy:.*true"; then
+              echo "redpanda healthy (poll $i)"; break
+            fi
+            sleep 2
+            if [ "$i" -eq 60 ]; then echo "redpanda not healthy"; docker logs redpanda; exit 1; fi
+          done
+          docker exec redpanda rpk version
+
+      - name: Integration tests (Redpanda)
+        env:
+          KAFKA_BROKERS: 127.0.0.1:9092
+          SCHEMA_REGISTRY_URL: http://127.0.0.1:8081
+        run: go test -tags=integration -race -count=1 -timeout=8m -p=1 .
+
+      - name: Stop Redpanda
+        if: always()
+        run: docker rm -f redpanda || true

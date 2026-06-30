@@ -57,7 +57,7 @@ func TestIntegrationAdminTopicLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cluster.ControllerID <= 0 {
+	if cluster.ControllerID < 0 {
 		t.Fatalf("controller=%d", cluster.ControllerID)
 	}
 

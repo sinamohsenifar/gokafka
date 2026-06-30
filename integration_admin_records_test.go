@@ -83,6 +83,7 @@ func TestIntegrationElectLeaders(t *testing.T) {
 	// must succeed at the protocol level and return a per-partition result.
 	results, err := admin.ElectLeaders(ctx, gokafka.ElectionPreferred, map[string][]int32{topic: {0}})
 	if err != nil {
+		skipIfUnsupportedAPI(t, err) // Redpanda does not implement ElectLeaders
 		t.Fatalf("elect leaders: %v", err)
 	}
 	if len(results) != 1 || results[0].Topic != topic || results[0].Partition != 0 {

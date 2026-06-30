@@ -5,13 +5,25 @@ package gokafka_test
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sinamohsenifar/gokafka"
 )
+
+// skipIfUnsupportedAPI skips the test when the broker does not advertise the API
+// the call needed (e.g. ElectLeaders or delegation tokens on Redpanda). GoKafka
+// surfaces this as a clear "broker does not support API key" error.
+func skipIfUnsupportedAPI(t *testing.T, err error) {
+	t.Helper()
+	if err != nil && strings.Contains(err.Error(), "broker does not support API") {
+		t.Skipf("broker does not support this API: %v", err)
+	}
+}
 
 func integrationWaitTopicReady(t *testing.T, admin *gokafka.Admin, topic string) {
 	integrationWaitPartitions(t, admin, topic, 1)
@@ -45,14 +57,22 @@ func integrationBrokers(t *testing.T) []string {
 
 func integrationBrokerEnv(t *testing.T, key, fallback string) string {
 	t.Helper()
-	if v := os.Getenv(key); v != "" {
-		return v
+	addr := os.Getenv(key)
+	if addr == "" {
+		addr = fallback
 	}
-	if fallback != "" {
-		return fallback
+	if addr == "" {
+		t.Skipf("%s not set", key)
 	}
-	t.Skipf("%s not set", key)
-	return ""
+	// These are optional listeners (TLS / SASL). Skip when the listener isn't
+	// reachable — e.g. the Redpanda CI lane has no dedicated SSL/SASL listeners,
+	// so the security tests skip there but still run on the Kafka lane.
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err != nil {
+		t.Skipf("%s listener %s not reachable: %v", key, addr, err)
+	}
+	_ = conn.Close()
+	return addr
 }
 
 func secretsDir(t *testing.T) string {

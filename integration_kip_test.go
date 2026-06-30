@@ -278,11 +278,21 @@ func TestIntegrationDescribeBrokerConfigs(t *testing.T) {
 	}
 	defer client.Close()
 
-	cfgs, err := client.Admin().DescribeBrokerConfigs(ctx, 1)
+	// Use a real broker id from the cluster (single-node Kafka is often 1,
+	// Redpanda is 0) rather than hardcoding one.
+	cluster, err := client.Admin().DescribeCluster(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfgs[1]) == 0 {
+	if len(cluster.Brokers) == 0 {
+		t.Fatal("no brokers")
+	}
+	brokerID := cluster.Brokers[0].NodeID
+	cfgs, err := client.Admin().DescribeBrokerConfigs(ctx, brokerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfgs[brokerID]) == 0 {
 		t.Fatal("expected broker config entries")
 	}
 }

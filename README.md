@@ -32,6 +32,18 @@ Every release is tested against the Kafka versions below (see [docs/COMPATIBILIT
 
 Tested on Go 1.22 through 1.26.
 
+### Other Kafka-compatible brokers
+
+GoKafka speaks the standard Kafka wire protocol and negotiates API versions at
+connect, so it works against Kafka-API-compatible brokers too. **Redpanda** is
+covered by its own CI lane — the full integration suite runs against a real
+Redpanda broker each build, automatically skipping the APIs Redpanda doesn't
+implement (ElectLeaders, delegation tokens, KIP-848/932 next-gen and share
+groups). Redpanda's Confluent-compatible Schema Registry works with the `schema`
+package as-is. Other compatible backends (Confluent Platform/Cloud, Amazon MSK,
+Azure Event Hubs' Kafka endpoint) are expected to work via the same negotiation
+but are not part of CI.
+
 ---
 
 ## How it compares

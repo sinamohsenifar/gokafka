@@ -130,8 +130,14 @@ func TestIntegrationBrokerFeatures(t *testing.T) {
 	defer cli.Close()
 
 	mv, ok := cli.BrokerFeature("metadata.version")
-	if !ok || mv <= 0 {
-		t.Fatalf("metadata.version not captured (level=%d ok=%v) — feature parsing broken", mv, ok)
+	if !ok {
+		// Non-Kafka brokers that implement the Kafka protocol (e.g. Redpanda) do
+		// not advertise KRaft finalized features. That's fine — BrokerFeature
+		// returns not-found and transactions fall back to v1.
+		t.Skip("broker does not advertise finalized features (e.g. Redpanda); metadata.version parsing only applies to KRaft Kafka")
+	}
+	if mv <= 0 {
+		t.Fatalf("metadata.version captured but level=%d — feature parsing broken", mv)
 	}
 	t.Logf("metadata.version finalized level = %d", mv)
 	if tv, ok := cli.BrokerFeature("transaction.version"); ok {

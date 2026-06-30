@@ -343,6 +343,13 @@ func decodeCreatePartitionsResponseFlex(body []byte) ([]TopicMutationResult, err
 		if err != nil {
 			return nil, err
 		}
+		// error_message (compact nullable string). Omitting this read happens to
+		// work against Kafka when the message is null (one 0x00 byte that the tag
+		// skip absorbs), but desyncs against a broker that returns a non-null
+		// message (e.g. Redpanda).
+		if _, err := buf.ReadCompactNullableString(); err != nil {
+			return nil, err
+		}
 		out = append(out, TopicMutationResult{Topic: name, ErrorCode: code})
 		if err := buf.SkipTagSection(); err != nil {
 			return nil, err

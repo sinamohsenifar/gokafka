@@ -5,6 +5,7 @@ package gokafka_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -56,6 +57,12 @@ func TestIntegrationAlterUserScramCredentials(t *testing.T) {
 	}
 
 	// Verify the credential works by authenticating with it on the SASL listener.
+	// This requires a SASL_PLAINTEXT listener on the SAME cluster the credential
+	// was created on; skip when that isn't explicitly provided (e.g. the Redpanda
+	// CI lane, which has no separate SASL listener configured here).
+	if os.Getenv("KAFKA_BROKERS_SASL_PLAINTEXT") == "" {
+		t.Skip("KAFKA_BROKERS_SASL_PLAINTEXT not set; skipping SCRAM auth round-trip (upsert+describe already verified)")
+	}
 	saslBrokers := integrationBrokerEnv(t, "KAFKA_BROKERS_SASL_PLAINTEXT", "127.0.0.1:9094")
 	authCfg, err := gokafka.NewConfig([]string{saslBrokers}, gokafka.WithSecurity(gokafka.SecurityConfig{
 		Protocol: gokafka.SecuritySASLPlaintext,
