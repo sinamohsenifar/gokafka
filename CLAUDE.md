@@ -136,3 +136,27 @@ rtk init --global       # Add RTK to ~/.claude/CLAUDE.md
 
 Overall average: **60-90% token reduction** on common development operations.
 <!-- /rtk-instructions -->
+
+<!-- wiki-knowledge-retrieval -->
+## Wiki knowledge base (Obsidian) — retrieval & maintenance (token-saving)
+
+Project knowledge lives in the Obsidian vault `Gokafka-wiki/` — a categorized knowledge base over the canonical docs (`docs/`, `README.md`, `CHANGELOG.md`). It is the navigation/analysis layer; the repo docs are the source of truth for facts.
+
+### Retrieval order (STOP at the first that answers — never read whole folders)
+1. `Gokafka-wiki/hot.md` — tiny: current focus + latest research/audit.
+2. `Gokafka-wiki/index.md` — Map of Content, organized by **category** (Architecture, Protocol, Packages, Features, Compatibility, Competitors, Concepts, Research, Decisions, History). Or `Gokafka-wiki/Dashboard.md` for the analytical/status view.
+3. the ONE specific note (e.g. `Gokafka-wiki/features/share-groups.md`). Each note's `## Related` footer links its neighbours; follow those, don't grep folders.
+
+Prefer `rtk read <file>` / `rtk grep <pattern> Gokafka-wiki/` over loading whole files.
+
+### Taxonomy (every note) — see `Gokafka-wiki/meta/taxonomy.md`
+Frontmatter: `type`, `category`, `subcategory`, `status`, `tags: [gokafka, <type>, <topics>]`, `updated`. New notes MUST follow it (use `meta/templates/`). Each note ends with a `## Related` section (4–8 path-form wikilinks, no `.md`).
+
+### Obsidian plugins (installed under `.obsidian/plugins/`, keep content compatible)
+- **Charts View** (`chartsview` code blocks) + **Contribution Graph** (`contributionGraph`) power `Dashboard.md` analytics — keep release/status data current there when versions ship.
+- **Extended Graph** / **3D Graph** color nodes by the `category`/`type` **properties** and tags (configured in `extended-graph/data.json`) — so consistent frontmatter matters.
+- **Smart Connections** semantic index lives in `.smart-env/` — **git-ignored and never read for tokens** (re-embeds automatically in-app).
+
+### Maintenance
+After a notable change: update the relevant note + its `## Related`, append to `Gokafka-wiki/log.md`, update `hot.md` if focus changed, and refresh `Dashboard.md` (capability table / release data) + `history/releases.md` on a release. Run every CLI command through `rtk`. The `claude-obsidian` plugin skills (`/wiki`, `/autoresearch`) manage and grow this vault.
+<!-- /wiki-knowledge-retrieval -->

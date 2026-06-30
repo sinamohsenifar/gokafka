@@ -1,0 +1,15 @@
+# Obsidian per-machine state — ignore if the vault is ever committed.
+# Keep the shareable config (app.json, core-plugins.json, templates.json) tracked.
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache
+.obsidian/*.json.bak
+.trash/
+
+
+
+
+# Ignore Smart Environment folder
+.smart-env
+# Plugin binaries (reinstalled by Obsidian; community-plugins.json lists them)
+.obsidian/plugins/

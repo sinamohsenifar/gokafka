@@ -1,0 +1,47 @@
+filters:
+  not:
+    - file.inFolder("meta")
+formulas:
+  edited_days: (now() - file.mtime).days.round(0)
+properties:
+  category:
+    displayName: "Category"
+  subcategory:
+    displayName: "Sub-category"
+  type:
+    displayName: "Type"
+  status:
+    displayName: "Status"
+  updated:
+    displayName: "Updated"
+  formula.edited_days:
+    displayName: "Edited (days ago)"
+views:
+  - type: table
+    name: "All pages by category"
+    groupBy:
+      property: category
+      direction: ASC
+    order:
+      - file.name
+      - subcategory
+      - type
+      - status
+      - updated
+  - type: table
+    name: "By type"
+    groupBy:
+      property: type
+      direction: ASC
+    order:
+      - file.name
+      - category
+      - status
+      - formula.edited_days
+  - type: cards
+    name: "Gallery"
+    order:
+      - file.name
+      - category
+      - type
+      - status

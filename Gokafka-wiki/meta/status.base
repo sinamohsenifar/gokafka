@@ -1,0 +1,49 @@
+filters:
+  not:
+    - file.inFolder("meta")
+    - file.name == "index"
+    - file.name == "Dashboard"
+    - file.name == "hot"
+    - file.name == "log"
+formulas:
+  edited_days: (now() - file.mtime).days.round(0)
+properties:
+  status:
+    displayName: "Status"
+  category:
+    displayName: "Category"
+  subcategory:
+    displayName: "Sub-category"
+  type:
+    displayName: "Type"
+  formula.edited_days:
+    displayName: "Edited (days ago)"
+views:
+  - type: table
+    name: "By status"
+    groupBy:
+      property: status
+      direction: ASC
+    order:
+      - file.name
+      - category
+      - subcategory
+      - type
+      - formula.edited_days
+  - type: table
+    name: "By category"
+    groupBy:
+      property: category
+      direction: ASC
+    order:
+      - file.name
+      - subcategory
+      - status
+      - type
+  - type: cards
+    name: "Cards by category"
+    order:
+      - file.name
+      - category
+      - subcategory
+      - status
