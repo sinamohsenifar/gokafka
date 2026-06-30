@@ -117,22 +117,27 @@ func TestIntegrationAdminACL(t *testing.T) {
 		_, _ = admin.DeleteACLs(context.Background(), gokafka.ACLResourceTopic, topic, principal)
 	})
 
-	bindings, err := admin.DescribeACLs(ctx, gokafka.ACLResourceTopic, topic, principal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(bindings) == 0 {
-		t.Fatal("expected acl bindings from DescribeACLs")
-	}
+	// ACL creation propagates asynchronously on some brokers, so DescribeACLs may
+	// briefly return nothing right after CreateACLs — poll until the binding appears.
+	var bindings []gokafka.ACLBinding
 	found := false
-	for _, b := range bindings {
-		if b.Principal == principal && b.Operation == gokafka.ACLOperationRead {
-			found = true
-			break
+	for i := 0; i < 20 && !found; i++ {
+		bindings, err = admin.DescribeACLs(ctx, gokafka.ACLResourceTopic, topic, principal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range bindings {
+			if b.Principal == principal && b.Operation == gokafka.ACLOperationRead {
+				found = true
+				break
+			}
+		}
+		if !found {
+			time.Sleep(250 * time.Millisecond)
 		}
 	}
 	if !found {
-		t.Fatalf("acl not found in describe: %+v", bindings)
+		t.Fatalf("acl binding for %s not found after polling: %+v", principal, bindings)
 	}
 }
 
