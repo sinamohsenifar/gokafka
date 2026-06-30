@@ -15,7 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **ShareConsumer.Poll: back off between empty fetch rounds.** When no records were available yet, `Poll` re-issued `ShareFetch` in a tight loop until its context expired, hammering the share-partition leader's connection (observed as `use of closed network connection` on a subsequent request). It now waits briefly (50ms) between empty rounds, or returns promptly when the caller's context is done.
+- **Share-consumer connection robustness under concurrency.** A share consumer multiplexes the foreground `Poll`/acknowledge path and the background heartbeat over the per-broker connections, which on a single-broker cluster are the same connection (the share-partition leader and the group coordinator are the same node). Three races could close a connection out from under an in-flight request — surfacing as `use of closed network connection` or a spurious `i/o timeout`, and in the worst case as redelivery of already-acknowledged records when a heartbeat failure fenced the member:
+  - `Poll` now clamps each `ShareFetch`'s broker-side long-poll to the caller's remaining deadline (and backs off briefly between empty rounds), so a fetch can't be interrupted mid-flight by the poll timeout — which previously desynced and closed the connection. A timed-out empty poll now returns cleanly instead of erroring or churning the connection.
+  - `Cluster.Request` re-dials and resends once when the pooled connection was closed by a concurrent request to the same broker before the request was written (the write never reached the broker, so the resend is safe). New `transport.ErrNotSent` marks that case.
+  - `ShareConsumer.Leave` / `stopShareHeartbeat` now wait for the background heartbeat goroutine to exit before sending the leave heartbeat, so a concurrent rejoin can no longer invalidate the connection mid-request.
 
 ### Tested
 

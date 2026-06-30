@@ -3,6 +3,7 @@ package transport
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -15,6 +16,13 @@ import (
 	"github.com/sinamohsenifar/gokafka/internal/limits"
 	"github.com/sinamohsenifar/gokafka/internal/protocol"
 )
+
+// ErrNotSent marks a transport error where the request frame never (fully)
+// reached the broker because the connection write failed — for example, the
+// pooled connection was closed by a concurrent request to the same broker. The
+// request had no effect on broker state, so the caller may safely re-dial and
+// resend it.
+var ErrNotSent = errors.New("transport: request not sent")
 
 // Conn is a Kafka broker connection with optional SASL/TLS.
 type Conn struct {
@@ -125,7 +133,7 @@ func (c *Conn) requestLocked(ctx context.Context, apiKey, apiVersion int16, body
 	defer c.netConn.SetDeadline(time.Time{})
 
 	if _, err := c.netConn.Write(frame); err != nil {
-		return nil, fmt.Errorf("transport: write: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrNotSent, err)
 	}
 
 	sizeBuf := bufpool.Default.Get()

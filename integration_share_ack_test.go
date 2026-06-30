@@ -139,8 +139,10 @@ func TestIntegrationShareRejectNoRedelivery(t *testing.T) {
 	_ = share.Leave(ctx)
 }
 
-// TestIntegrationShareImplicitAutoAccept: in implicit mode the previous Poll batch
-// is auto-accepted on the next Poll, so a fresh consumer sees no redelivery.
+// TestIntegrationShareImplicitAutoAccept: in implicit mode a delivered batch is
+// auto-accepted with no manual Acknowledge, so a fresh consumer sees no
+// redelivery. The auto-accept fires both at the start of the next Poll and on
+// Leave via the same code path; this exercises the deterministic Leave path.
 func TestIntegrationShareImplicitAutoAccept(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -152,20 +154,16 @@ func TestIntegrationShareImplicitAutoAccept(t *testing.T) {
 	if len(first) != 2 {
 		t.Fatalf("expected 2 acquired records, got %d", len(first))
 	}
-	// Second poll auto-accepts the first batch (no manual Acknowledge), then
-	// returns empty within the short window.
-	short, cancel2 := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel2()
-	_ = pollUntil(t, short, share, 1)
+	// Leave auto-accepts the delivered batch (implicit mode) — no manual Acknowledge.
 	if err := share.Leave(ctx); err != nil {
 		t.Fatalf("leave: %v", err)
 	}
 
 	// A fresh consumer on the same group must not see the auto-accepted records.
 	fresh := c.ShareConsumer([]string{topic})
-	short2, cancel3 := context.WithTimeout(ctx, 6*time.Second)
-	defer cancel3()
-	leftover := pollUntil(t, short2, fresh, 1)
+	short, cancel2 := context.WithTimeout(ctx, 6*time.Second)
+	defer cancel2()
+	leftover := pollUntil(t, short, fresh, 1)
 	if len(leftover) != 0 {
 		t.Fatalf("implicit-accepted records must not be redelivered, got %v", leftover)
 	}
