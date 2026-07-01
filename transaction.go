@@ -140,19 +140,20 @@ func (t *TransactionalProducer) ProduceWithinTxnResult(ctx context.Context, reco
 		return nil, err
 	}
 	topics := uniqueTopics(records)
-	var results []ProduceRecordResult
+	results := make([]ProduceRecordResult, len(records))
+	acked := make([]bool, len(records))
 	err = retryRetriable(ctx, t.client.cfg.Retry, func() error {
 		if err := t.client.cluster.RefreshIfStale(ctx, topics, false); err != nil {
 			return err
 		}
-		res, err := t.prod.sendRecords(ctx, records, recordSendOpts{
+		// Re-send only records not yet acknowledged, so a partial multi-broker
+		// failure never re-sends a partition already committed.
+		pending, origIdx := pendingRecords(records, acked)
+		res, err := t.prod.sendRecords(ctx, pending, recordSendOpts{
 			pid: &t.pid, idState: t.idState, transactional: true,
 		})
-		if err != nil {
-			return err
-		}
-		results = res
-		return nil
+		mergeAcked(results, acked, origIdx, res)
+		return err
 	})
 	return results, err
 }

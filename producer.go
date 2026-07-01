@@ -72,7 +72,8 @@ func (p *Producer) ProduceSyncResult(ctx context.Context, records ...Record) ([]
 	ctx, span := p.client.observe.StartSpan(ctx, "gokafka.produce", observe.String("messaging.system", "kafka"))
 	defer span.End()
 
-	var results []ProduceRecordResult
+	results := make([]ProduceRecordResult, len(records))
+	acked := make([]bool, len(records))
 	var frozen []Record
 	err := retryRetriable(ctx, p.client.cfg.Retry, func() error {
 		if err := p.client.cluster.RefreshIfStale(ctx, topics, false); err != nil {
@@ -89,7 +90,13 @@ func (p *Producer) ProduceSyncResult(ctx context.Context, records ...Record) ([]
 			}
 			frozen = f
 		}
-		res, err := p.sendOnce(ctx, frozen)
+		// Send only records not yet acknowledged by a broker. On a partial
+		// multi-broker failure this re-sends just the failed partitions; a
+		// partition another broker already committed is never re-sent (which,
+		// with idempotence off, would duplicate it).
+		pending, origIdx := pendingRecords(frozen, acked)
+		res, err := p.sendOnce(ctx, pending)
+		mergeAcked(results, acked, origIdx, res)
 		if err != nil {
 			if IsRetriable(err) {
 				_ = p.client.cluster.Refresh(ctx, topics)
@@ -100,17 +107,43 @@ func (p *Producer) ProduceSyncResult(ctx context.Context, records ...Record) ([]
 			// trigger a producer-id reset + full re-send: the broker may have
 			// already committed part of this send, and re-sending under a fresh
 			// producer id would duplicate those records — the exact guarantee the
-			// idempotent producer exists to provide. Recovery is the caller's:
-			// recreate the producer (idempotent) or abort the transaction.
+			// idempotent producer exists to provide. On a fatal error the caller
+			// must treat the whole send as poisoned (results may be partial).
+			// Recovery is the caller's: recreate the producer or abort the txn.
 			span.RecordError(err)
 			span.SetStatus(observe.StatusError, err.Error())
 			p.client.observe.Log(ctx, observe.LevelError, "produce failed", observe.Error(err))
 			return err
 		}
-		results = res
 		return nil
 	})
 	return results, err
+}
+
+// pendingRecords returns the records not yet acknowledged (acked[i] == false)
+// together with their original indices, for a subset re-send.
+func pendingRecords(frozen []Record, acked []bool) (pending []Record, origIdx []int) {
+	pending = make([]Record, 0, len(frozen))
+	origIdx = make([]int, 0, len(frozen))
+	for i, r := range frozen {
+		if !acked[i] {
+			pending = append(pending, r)
+			origIdx = append(origIdx, i)
+		}
+	}
+	return pending, origIdx
+}
+
+// mergeAcked copies broker-acknowledged results (Topic != "" — set only for
+// partitions the broker committed) from a subset send back into the full results
+// slice by original index, marking those records acked so a retry skips them.
+func mergeAcked(results []ProduceRecordResult, acked []bool, origIdx []int, res []ProduceRecordResult) {
+	for k := range res {
+		if res[k].Topic != "" {
+			results[origIdx[k]] = res[k]
+			acked[origIdx[k]] = true
+		}
+	}
 }
 
 func (p *Producer) ensureProducerID(ctx context.Context) error {
@@ -308,36 +341,66 @@ func (p *Producer) sendRecords(ctx context.Context, records []Record, opts recor
 	for node := range byBroker {
 		nodes = append(nodes, node)
 	}
-	if len(nodes) == 1 {
-		if err := p.produceToBroker(ctx, nodes[0], byBroker[nodes[0]], inputByKey, settings, results); err != nil {
-			rollbackPartitions(partBatches)
-			return nil, err
+
+	// Collect the FAILED partitions across brokers. A partition one broker
+	// acknowledged stays acked (its result is filled, its sequence block kept);
+	// only failed partitions are rolled back and returned to the caller for
+	// retry. This is what stops a partial multi-broker failure from re-sending —
+	// and duplicating — records another broker already committed.
+	failed := map[partKey]int{}
+	var sendErr error
+	markFailed := func(keys []partKey, err error) {
+		for _, k := range keys {
+			if n, ok := partBatches[k]; ok {
+				failed[k] = n
+			}
 		}
-		return results, nil
+		if err == nil {
+			return
+		}
+		// Prefer a non-retriable (fatal) error so it surfaces instead of looping.
+		if sendErr == nil || (IsRetriable(sendErr) && !IsRetriable(err)) {
+			sendErr = err
+		}
 	}
 
-	type brokerOut struct {
-		err error
-	}
-	outs := make([]brokerOut, len(nodes))
-	var wg sync.WaitGroup
-	for i, node := range nodes {
-		wg.Add(1)
-		go func(i int, node int32) {
-			defer wg.Done()
-			outs[i].err = p.produceToBroker(ctx, node, byBroker[node], inputByKey, settings, results)
-		}(i, node)
-	}
-	wg.Wait()
-	for _, o := range outs {
-		if o.err != nil {
-			rollbackPartitions(partBatches)
-			return nil, o.err
+	if len(nodes) == 1 {
+		fk, err := p.produceToBroker(ctx, nodes[0], byBroker[nodes[0]], inputByKey, settings, results)
+		markFailed(fk, err)
+	} else {
+		type brokerOut struct {
+			failed []partKey
+			err    error
+		}
+		outs := make([]brokerOut, len(nodes))
+		var wg sync.WaitGroup
+		for i, node := range nodes {
+			wg.Add(1)
+			go func(i int, node int32) {
+				defer wg.Done()
+				outs[i].failed, outs[i].err = p.produceToBroker(ctx, node, byBroker[node], inputByKey, settings, results)
+			}(i, node)
+		}
+		wg.Wait()
+		for _, o := range outs {
+			markFailed(o.failed, o.err)
 		}
 	}
-	return results, nil
+
+	rollbackPartitions(failed)
+	// Return partial results (acked partitions filled; unacked entries zero) with
+	// the representative error. The caller retries only the unacked records.
+	return results, sendErr
 }
 
+// produceToBroker sends one broker's batch and records the per-partition
+// outcome. It writes results[idx] for every partition the broker acknowledged
+// (ErrorCode == 0) and returns the partition keys that FAILED plus a
+// representative error (a non-retriable/fatal code is preferred so it surfaces
+// rather than being retried). It never returns early on the first bad partition:
+// the caller must know exactly which partitions committed so it can roll back
+// and re-send only the failed ones — re-sending a committed partition would
+// duplicate it (with idempotence off) or draw DUPLICATE_SEQUENCE (with it on).
 func (p *Producer) produceToBroker(
 	ctx context.Context,
 	node int32,
@@ -345,28 +408,39 @@ func (p *Producer) produceToBroker(
 	inputByKey map[partKey][]indexedRecord,
 	settings protocol.ProduceSettings,
 	results []ProduceRecordResult,
-) error {
+) ([]partKey, error) {
 	ver := p.client.cluster.NegotiatedVersion(protocol.APIProduce, protocol.VerProduce)
 	body, err := protocol.EncodeProduceRequest(ver, batch, settings)
 	if err != nil {
-		return err
+		return brokerPartKeys(batch), err
 	}
 	rb, err := p.client.cluster.Request(ctx, node, protocol.APIProduce, ver, body)
 	if err != nil {
+		// Whole request failed: nothing on this broker was acknowledged.
 		p.client.observe.Metrics.OnProduce(0, err)
-		return err
+		return brokerPartKeys(batch), err
 	}
 	brokerResults, err := protocol.DecodeProduceResponse(ver, rb)
 	if err != nil {
-		return err
+		return brokerPartKeys(batch), err
 	}
+	var failed []partKey
+	var firstErr, fatalErr error
 	for _, res := range brokerResults {
+		pk := partKey{res.Topic, res.Partition}
 		if res.ErrorCode != 0 {
 			ke := newKafkaError(res.ErrorCode, res.Topic, res.Partition, "produce failed")
 			p.client.observe.Metrics.OnProduce(0, ke)
-			return ke
+			failed = append(failed, pk)
+			if firstErr == nil {
+				firstErr = ke
+			}
+			if !IsRetriable(ke) {
+				fatalErr = ke
+			}
+			continue
 		}
-		inputs := inputByKey[partKey{res.Topic, res.Partition}]
+		inputs := inputByKey[pk]
 		for i, inp := range inputs {
 			off := res.Offset
 			if len(inputs) > 1 {
@@ -378,7 +452,26 @@ func (p *Producer) produceToBroker(
 			p.client.observe.Metrics.OnProduce(len(inp.rec.Value), nil)
 		}
 	}
-	return nil
+	if fatalErr != nil {
+		return failed, fatalErr
+	}
+	return failed, firstErr
+}
+
+// brokerPartKeys returns the distinct partition keys in a broker's batch, used to
+// mark every partition failed when the whole request (transport/decode) fails.
+func brokerPartKeys(batch []protocol.ProduceRecord) []partKey {
+	seen := map[partKey]struct{}{}
+	out := make([]partKey, 0, len(batch))
+	for _, r := range batch {
+		k := partKey{r.Topic, r.Partition}
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	return out
 }
 
 func recordHeaders(hdrs []Header) [][2][]byte {

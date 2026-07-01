@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.27] - 2026-07-01
+
+### Fixed
+
+- **Producer: on a partial multi-broker failure, retry only the failed partitions — never re-send a partition another broker already committed (duplication).** `sendRecords` fanned out one request per leader; if any broker failed, it rolled back **all** partitions and the retry re-sent the **whole** batch. With idempotence off (a supported config, no broker-side sequence dedup) that duplicated every record a healthy broker had already committed. `produceToBroker` now records the outcome of **every** partition in the response (writing results for the acknowledged ones instead of returning on the first error) and reports the failed partition keys; `sendRecords` rolls back and returns only the failed partitions with partial results; and `ProduceSyncResult` / `ProduceWithinTxnResult` re-send **only the not-yet-acknowledged records** on each retry. A partition another broker committed keeps its result and its idempotent sequence block and is never re-sent. New `kfake.FailNextProducePartition` fault knob + a deterministic in-process regression test (partial per-partition failure must not duplicate the committed partition) and a real 3-broker `TestMultiBrokerPartialAckNoDuplication` (broker stopped mid-batch across all partitions; every record consumed exactly once). Full unit `-race` + producer/transaction (abort/send-offsets/reuse/EOS/CTP) + read-committed + the 3-broker multibroker suite green.
+
+  This completes the **data-loss / message-integrity audit** (v0.26.22–v0.26.27): all 6 confirmed findings fixed — record-batch CRC validation, idempotent sequence-per-record, fatal `OUT_OF_ORDER_SEQUENCE`/epoch, `OffsetFetch` completeness, partition freeze across retries, `Poll` delivered-position cursor, and this per-partition produce retry.
+
 ## [0.26.26] - 2026-07-01
 
 ### Fixed

@@ -60,7 +60,7 @@ func (b *Broker) handleProduce(_ int, body []byte) ([]byte, error) {
 		name  string
 		parts []pres
 	}
-	faultCode := b.takeProduceFault()
+	fault, faultActive := b.takeProduceFault()
 
 	results := make([]tres, 0, int(nTopics))
 	for i := 1; i < int(nTopics); i++ {
@@ -87,10 +87,10 @@ func (b *Broker) handleProduce(_ int, body []byte) ([]byte, error) {
 			}
 			code := int16(0)
 			base := int64(-1)
-			if faultCode != 0 {
+			if faultActive && (fault.all || (name == fault.topic && part == fault.part)) {
 				// Injected fault: report the error and do NOT append the batch, so
-				// the record is not committed and the client retries.
-				code = faultCode
+				// this partition is not committed and the client retries it.
+				code = fault.code
 			} else {
 				b.store.mu.Lock()
 				t := b.store.topics[name]

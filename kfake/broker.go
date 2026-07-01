@@ -61,34 +61,64 @@ type Broker struct {
 	offsetFetchFailN    int
 	offsetFetchFailCode int16
 
-	// The next produceFailN Produce responses stamp produceFailCode on every
-	// partition and skip the log append, letting tests exercise the producer's
-	// retry / partition-freeze behaviour without committing the faulted batch.
-	produceFailN    int
-	produceFailCode int16
+	// The next produceFailN Produce responses stamp produceFailCode on the target
+	// partition(s) and skip the log append, letting tests exercise the producer's
+	// retry / partition-freeze / partial-ack behaviour without committing the
+	// faulted batch. produceFailTopic == "" faults every partition; otherwise only
+	// (produceFailTopic, produceFailPart).
+	produceFailN     int
+	produceFailCode  int16
+	produceFailTopic string
+	produceFailPart  int32
+}
+
+// produceFault describes a single injected Produce fault taken for one response.
+type produceFault struct {
+	code  int16
+	all   bool
+	topic string
+	part  int32
 }
 
 // FailNextProduce makes the next n Produce responses return the given
-// per-partition error code on every partition and NOT append the batch, then
-// resume normal behaviour. Used to test that a produce retry reuses the same
-// (frozen) partition assignment instead of re-running the partitioner.
+// per-partition error code on EVERY partition and NOT append the batch, then
+// resume normal behaviour. Used to test full-retry behaviour (partition freeze).
 func (b *Broker) FailNextProduce(n int, code int16) {
 	b.mu.Lock()
 	b.produceFailN = n
 	b.produceFailCode = code
+	b.produceFailTopic = ""
 	b.mu.Unlock()
 }
 
-// takeProduceFault returns the error code to inject for this Produce response
-// (0 = none) and decrements the remaining fault count.
-func (b *Broker) takeProduceFault() int16 {
+// FailNextProducePartition faults ONLY (topic, part) on the next n Produce
+// responses (the batch is not appended for that partition); other partitions in
+// the same request commit normally. Used to test partial-ack subset retry: the
+// committed partition must not be re-sent on the retry.
+func (b *Broker) FailNextProducePartition(n int, code int16, topic string, part int32) {
+	b.mu.Lock()
+	b.produceFailN = n
+	b.produceFailCode = code
+	b.produceFailTopic = topic
+	b.produceFailPart = part
+	b.mu.Unlock()
+}
+
+// takeProduceFault returns the fault to apply to this Produce response (ok=false
+// when none) and decrements the remaining fault count.
+func (b *Broker) takeProduceFault() (produceFault, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.produceFailN <= 0 {
-		return 0
+		return produceFault{}, false
 	}
 	b.produceFailN--
-	return b.produceFailCode
+	return produceFault{
+		code:  b.produceFailCode,
+		all:   b.produceFailTopic == "",
+		topic: b.produceFailTopic,
+		part:  b.produceFailPart,
+	}, true
 }
 
 // FailNextOffsetFetch makes the next n single-group (v7) OffsetFetch responses
