@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.21] - 2026-07-01
+
+### Performance
+
+- **Producer send path: drop a redundant per-produce allocation.** `sendRecords` built a `protoByKey` map of `[]ProduceRecord` per call that was only used to enumerate the partition set — its slices were never read. Removed it and derive the partition set from the existing `inputByKey` keys. `BenchmarkProduceSync1000` (end-to-end via the `kfake` broker): **92 → 80 allocs/op, 2.74MB → 2.34MB, 583µs → 469µs (~20% faster)**. Behaviour-identical (producer unit `-race` + produce/transaction/lag integration green). Adds `BenchmarkProduceSync1/1000`.
+
 ## [0.26.20] - 2026-07-01
 
 ### Added

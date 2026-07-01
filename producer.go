@@ -244,7 +244,6 @@ type indexedRecord struct {
 
 // sendRecords produces records using optional idempotent producer id/state (for transactions).
 func (p *Producer) sendRecords(ctx context.Context, records []Record, opts recordSendOpts) ([]ProduceRecordResult, error) {
-	protoByKey := map[partKey][]protocol.ProduceRecord{}
 	inputByKey := map[partKey][]indexedRecord{}
 	byBroker := map[int32][]protocol.ProduceRecord{}
 
@@ -259,15 +258,14 @@ func (p *Producer) sendRecords(ctx context.Context, records []Record, opts recor
 			Topic: r.Topic, Partition: part, Key: r.Key, Value: r.Value,
 			Headers: recordHeaders(r.Headers), Timestamp: timeNow(r.Timestamp),
 		}
-		protoByKey[key] = append(protoByKey[key], pr)
 		inputByKey[key] = append(inputByKey[key], indexedRecord{idx: i, rec: r})
 		byBroker[leader] = append(byBroker[leader], pr)
 	}
 
-	partBatches := map[partKey]int{}
-	for k, rs := range protoByKey {
+	// One batch per partition; the partition set is exactly inputByKey's keys.
+	partBatches := make(map[partKey]int, len(inputByKey))
+	for k := range inputByKey {
 		partBatches[k] = 1
-		_ = rs
 	}
 
 	seqCursor := map[partKey]int32{}
