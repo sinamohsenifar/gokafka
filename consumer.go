@@ -555,39 +555,94 @@ func (c *Consumer) loadCommittedOffsets(ctx context.Context, coord int32) error 
 	// transactional offset commits resolve, so a resuming consumer never reads a
 	// stale committed offset in an exactly-once pipeline (matches franz-go).
 	body := protocol.EncodeOffsetFetchRequest(protocol.VerOffsetFetchSingle, group, memberID, parts, true)
-	rb, err := c.client.cluster.Request(ctx, coord, protocol.APIOffsetFetch, protocol.VerOffsetFetchSingle, body)
-	if err != nil {
-		return err
+
+	// Drive completeness off the ASSIGNMENT set, not the OffsetFetch response.
+	// applyAssignment seeds every assigned partition at offset 0; a partition
+	// that is omitted from the response (a top-level COORDINATOR_LOAD returns an
+	// empty topics array) or comes back with a transient per-partition code
+	// (UNSTABLE_OFFSET_COMMIT while a transactional commit is in flight,
+	// coordinator load) would otherwise be left at 0 — silently re-reading the
+	// whole partition from the log start (mass duplication) or tripping
+	// OFFSET_OUT_OF_RANGE once retention advances the log-start offset. Retry the
+	// fetch until every assigned partition is resolved (committed offset applied,
+	// or its reset ladder run when there is no commit); never fall back to 0.
+	need := make(map[partKey]struct{}, len(assignments))
+	for _, a := range assignments {
+		need[partKey{a.topic, a.partition}] = struct{}{}
 	}
-	committed, err := protocol.DecodeOffsetFetchResponse(protocol.VerOffsetFetchSingle, rb)
-	if err != nil {
-		return err
-	}
-	for _, co := range committed {
-		if co.ErrorCode != 0 {
-			continue
+	const maxAttempts = 20
+	backoff := 100 * time.Millisecond
+	for attempt := 0; ; attempt++ {
+		rb, err := c.client.cluster.Request(ctx, coord, protocol.APIOffsetFetch, protocol.VerOffsetFetchSingle, body)
+		if err != nil {
+			return err
 		}
-		if co.Offset >= 0 {
-			c.bumpOffset(co.Topic, co.Partition, co.Offset)
-		} else if d := c.client.cfg.Consumer.OffsetResetDuration; d > 0 {
-			if err := c.SeekToTime(ctx, co.Topic, time.Now().Add(-d), co.Partition); err != nil {
-				return err
+		committed, err := protocol.DecodeOffsetFetchResponse(protocol.VerOffsetFetchSingle, rb)
+		if err != nil {
+			return err
+		}
+		for _, co := range committed {
+			k := partKey{co.Topic, co.Partition}
+			if _, want := need[k]; !want {
+				continue // already resolved, or not an assigned partition
 			}
-		} else if c.client.cfg.Consumer.ConsumeFromBeginning {
-			if c.client.cfg.Consumer.IsolationLevel == IsolationReadCommitted {
-				if err := c.Seek(co.Topic, co.Partition, 0); err != nil {
-					return err
+			if co.ErrorCode != 0 {
+				if offsetFetchRetriable(co.ErrorCode) {
+					continue // transient — leave in need and retry
 				}
-			} else if err := c.SeekToBeginning(ctx, co.Topic, co.Partition); err != nil {
+				return newKafkaError(co.ErrorCode, co.Topic, co.Partition, "offset fetch failed")
+			}
+			if err := c.applyCommittedOffset(ctx, co); err != nil {
 				return err
 			}
-		} else {
-			if err := c.SeekToEnd(ctx, co.Topic, co.Partition); err != nil {
-				return err
-			}
+			delete(need, k)
+		}
+		if len(need) == 0 {
+			return nil
+		}
+		if attempt >= maxAttempts-1 {
+			return fmt.Errorf("gokafka: offset fetch left %d assigned partition(s) unresolved after %d attempts (coordinator still loading?)", len(need), maxAttempts)
+		}
+		if err := sleepCtx(ctx, backoff); err != nil {
+			return err
+		}
+		if backoff < time.Second {
+			backoff *= 2
 		}
 	}
-	return nil
+}
+
+// applyCommittedOffset positions one assigned partition from its OffsetFetch
+// result: a committed offset seeks there; a partition with no commit (Offset<0)
+// runs the configured auto-offset-reset ladder (by-duration / earliest / latest).
+func (c *Consumer) applyCommittedOffset(ctx context.Context, co protocol.CommittedOffset) error {
+	if co.Offset >= 0 {
+		c.bumpOffset(co.Topic, co.Partition, co.Offset)
+		return nil
+	}
+	if d := c.client.cfg.Consumer.OffsetResetDuration; d > 0 {
+		return c.SeekToTime(ctx, co.Topic, time.Now().Add(-d), co.Partition)
+	}
+	if c.client.cfg.Consumer.ConsumeFromBeginning {
+		if c.client.cfg.Consumer.IsolationLevel == IsolationReadCommitted {
+			return c.Seek(co.Topic, co.Partition, 0)
+		}
+		return c.SeekToBeginning(ctx, co.Topic, co.Partition)
+	}
+	return c.SeekToEnd(ctx, co.Topic, co.Partition)
+}
+
+// offsetFetchRetriable reports whether a per-partition OffsetFetch error code is
+// transient and the fetch should be retried (rather than surfaced or, worse,
+// left at the offset-0 default). UNSTABLE_OFFSET_COMMIT is returned while a
+// transactional offset commit is still in flight under require_stable.
+func offsetFetchRetriable(code int16) bool {
+	switch ErrorCode(code) {
+	case ErrCodeCoordinatorLoad, ErrCodeCoordinatorNotAvailable, ErrCodeNotCoordinator,
+		ErrCodeUnstableOffsetCommit:
+		return true
+	}
+	return false
 }
 
 func (c *Consumer) ensureHeartbeat() {

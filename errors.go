@@ -44,6 +44,7 @@ const (
 	ErrCodeTransactionAbortable         ErrorCode = 120
 	ErrCodeShareSessionNotFound         ErrorCode = 122
 	ErrCodeInvalidShareSessionEpoch     ErrorCode = 123
+	ErrCodeUnstableOffsetCommit         ErrorCode = 88
 )
 
 // KafkaError wraps a broker error code with context.

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.24] - 2026-07-01
+
+### Fixed
+
+- **Consumer: retry an incomplete/transient `OffsetFetch` on (re)join instead of silently resuming an assigned partition at offset 0 (data duplication).** `loadCommittedOffsets` iterated the `OffsetFetch` *response* and did `if ErrorCode != 0 { continue }`, so any assigned partition that came back with a transient per-partition code (`UNSTABLE_OFFSET_COMMIT` while a transactional commit is in flight under `require_stable`, coordinator load) — or was omitted entirely (a top-level `COORDINATOR_LOAD_IN_PROGRESS` returns an empty topics array) — was left at the `applyAssignment` default of **offset 0**. On the next `Poll` it re-read the whole partition from the log start (**mass duplication**), or tripped `OFFSET_OUT_OF_RANGE` once retention advanced the log-start offset. It now drives completeness off the **assignment** set: every assigned partition must be resolved (committed offset applied, or its reset ladder run when there is no commit), retrying the fetch with backoff for transient codes/omissions and surfacing a non-retriable code, so a partition that had a committed offset never silently falls back to 0. New `kfake` `FailNextOffsetFetch` fault-injection knob and a black-box regression test (a transient `OffsetFetch` error must not cause a re-read; verified to fail without the fix).
+
 ## [0.26.23] - 2026-07-01
 
 ### Fixed

@@ -312,6 +312,8 @@ func (b *Broker) handleOffsetFetch(ver int, body []byte) ([]byte, error) {
 	}
 	// require_stable + request tag are not needed by the mock.
 
+	faultCode := b.takeOffsetFetchFault()
+
 	b.store.mu.Lock()
 	g := b.store.group(group)
 	out := wire.NewBuffer(64)
@@ -327,11 +329,14 @@ func (b *Broker) handleOffsetFetch(ver int, body []byte) ([]byte, error) {
 					off = v
 				}
 			}
+			if faultCode != 0 {
+				off = -1 // no committed offset reported alongside the injected error
+			}
 			out.WriteInt32(p)
 			out.WriteInt64(off)                 // committed_offset
 			out.WriteInt32(-1)                  // committed_leader_epoch
 			out.WriteCompactNullableString(nil) // metadata
-			out.WriteInt16(0)                   // error_code
+			out.WriteInt16(faultCode)           // error_code (0 = ok)
 			out.WriteEmptyTagSection()
 		}
 		out.WriteEmptyTagSection()

@@ -54,6 +54,36 @@ type Broker struct {
 	mu     sync.Mutex
 	conns  map[net.Conn]struct{}
 	closed bool
+
+	// Fault injection for tests: the next offsetFetchFailN single-group
+	// OffsetFetch responses stamp offsetFetchFailCode as the per-partition
+	// error, letting tests exercise the client's retry/completeness handling.
+	offsetFetchFailN    int
+	offsetFetchFailCode int16
+}
+
+// FailNextOffsetFetch makes the next n single-group (v7) OffsetFetch responses
+// return the given per-partition error code on every partition, then resume
+// normal behaviour. Used to test that the consumer retries a transient
+// OffsetFetch (e.g. UNSTABLE_OFFSET_COMMIT / coordinator load) instead of
+// silently leaving assigned partitions at offset 0.
+func (b *Broker) FailNextOffsetFetch(n int, code int16) {
+	b.mu.Lock()
+	b.offsetFetchFailN = n
+	b.offsetFetchFailCode = code
+	b.mu.Unlock()
+}
+
+// takeOffsetFetchFault returns the error code to inject for this OffsetFetch
+// response (0 = none) and decrements the remaining fault count.
+func (b *Broker) takeOffsetFetchFault() int16 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.offsetFetchFailN <= 0 {
+		return 0
+	}
+	b.offsetFetchFailN--
+	return b.offsetFetchFailCode
 }
 
 // NewBroker starts a mock broker on a loopback port and returns it. Call Close
