@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.25] - 2026-07-01
+
+### Fixed
+
+- **Producer: freeze each record's partition once, so a retry never re-runs the partitioner (reorder / cross-partition duplication).** `resolvePartition` ran inside the produce retry loop over the original records; `RoundRobinPartitioner` advances a shared counter on every call, so a keyless record (`Partition < 0`) resolved to a **different** partition on a retry than on the first attempt — reordering it, or duplicating it onto two partitions when an earlier attempt had already committed. The producer now resolves partitions **once** (`freezePartitions`) after the first metadata refresh and reuses the frozen assignment across retries. The transactional path freezes **before** `AddPartitionsToTxn` so the registered partition is exactly the one the send uses (it previously resolved twice — once to register, once to send — which could diverge under RoundRobin). `resolvePartition` also no longer falls through to the partitioner when an explicit partition's leader is momentarily unknown: it returns a retriable `LEADER_NOT_AVAILABLE` so the retry refreshes metadata, instead of silently re-partitioning. New `kfake.FailNextProduce` fault-injection knob and a white-box regression test (a retriable produce failure must not move the record to another partition; verified to fail without the freeze). Producer/transaction/EOS/CTP/read-committed integration green.
+
 ## [0.26.24] - 2026-07-01
 
 ### Fixed

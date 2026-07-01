@@ -126,12 +126,22 @@ func (t *TransactionalProducer) ProduceWithinTxnResult(ctx context.Context, reco
 	if len(records) == 0 {
 		return nil, nil
 	}
+	// Freeze partition assignment before registering partitions so the partition
+	// AddPartitionsToTxn registers is exactly the one the send uses. A stateful
+	// partitioner (RoundRobin) would otherwise run once here and again in
+	// sendRecords, picking different partitions — the send would then target a
+	// partition never added to the transaction.
+	frozen, err := t.prod.freezePartitions(records)
+	if err != nil {
+		return nil, err
+	}
+	records = frozen
 	if err := t.ensurePartitions(ctx, records); err != nil {
 		return nil, err
 	}
 	topics := uniqueTopics(records)
 	var results []ProduceRecordResult
-	err := retryRetriable(ctx, t.client.cfg.Retry, func() error {
+	err = retryRetriable(ctx, t.client.cfg.Retry, func() error {
 		if err := t.client.cluster.RefreshIfStale(ctx, topics, false); err != nil {
 			return err
 		}

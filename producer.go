@@ -73,12 +73,23 @@ func (p *Producer) ProduceSyncResult(ctx context.Context, records ...Record) ([]
 	defer span.End()
 
 	var results []ProduceRecordResult
+	var frozen []Record
 	err := retryRetriable(ctx, p.client.cfg.Retry, func() error {
 		if err := p.client.cluster.RefreshIfStale(ctx, topics, false); err != nil {
 			span.RecordError(err)
 			return err
 		}
-		res, err := p.sendOnce(ctx, records)
+		// Freeze partition assignment once (after the first metadata refresh) and
+		// reuse it across retries so the partitioner never re-runs on a record.
+		if frozen == nil {
+			f, err := p.freezePartitions(records)
+			if err != nil {
+				span.RecordError(err)
+				return err
+			}
+			frozen = f
+		}
+		res, err := p.sendOnce(ctx, frozen)
 		if err != nil {
 			if IsRetriable(err) {
 				_ = p.client.cluster.Refresh(ctx, topics)
@@ -404,10 +415,39 @@ func (p *Producer) resolvePartition(r Record) (part int32, leader int32, err err
 		if leader, ok := p.client.cluster.LeaderNodeID(r.Topic, r.Partition); ok {
 			return r.Partition, leader, nil
 		}
+		// Explicit (or frozen) partition whose leader is momentarily unknown
+		// (metadata gap / in-flight election). Never fall through to the
+		// partitioner — that would re-partition a record whose partition was
+		// deliberately chosen (or frozen for retry). Surface a retriable error so
+		// the produce loop refreshes metadata and re-resolves the leader.
+		return 0, 0, newKafkaError(int16(ErrCodeLeaderNotAvail), r.Topic, r.Partition, "leader not available")
 	}
 	idx := p.partitioner.Partition(r.Key, len(parts))
 	pm := parts[idx]
 	return pm.Partition, pm.Leader, nil
+}
+
+// freezePartitions resolves each keyless/unspecified record's partition ONCE and
+// returns a copy with the chosen partition written back. Produce retries reuse
+// the frozen copy so the partitioner never runs again on a record: a stateful
+// partitioner (RoundRobin advances a shared counter per call) would otherwise
+// route the same record to a different partition on a retry — reordering it, or
+// duplicating it onto two partitions when an earlier attempt already committed.
+// Records with an explicit partition (>= 0) are copied unchanged. The input
+// slice is never mutated (it may alias the caller's backing array).
+func (p *Producer) freezePartitions(records []Record) ([]Record, error) {
+	frozen := make([]Record, len(records))
+	for i, r := range records {
+		if r.Partition < 0 {
+			part, _, err := p.resolvePartition(r)
+			if err != nil {
+				return nil, err
+			}
+			r.Partition = part
+		}
+		frozen[i] = r
+	}
+	return frozen, nil
 }
 
 func uniqueTopics(records []Record) []string {

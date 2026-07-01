@@ -60,6 +60,35 @@ type Broker struct {
 	// error, letting tests exercise the client's retry/completeness handling.
 	offsetFetchFailN    int
 	offsetFetchFailCode int16
+
+	// The next produceFailN Produce responses stamp produceFailCode on every
+	// partition and skip the log append, letting tests exercise the producer's
+	// retry / partition-freeze behaviour without committing the faulted batch.
+	produceFailN    int
+	produceFailCode int16
+}
+
+// FailNextProduce makes the next n Produce responses return the given
+// per-partition error code on every partition and NOT append the batch, then
+// resume normal behaviour. Used to test that a produce retry reuses the same
+// (frozen) partition assignment instead of re-running the partitioner.
+func (b *Broker) FailNextProduce(n int, code int16) {
+	b.mu.Lock()
+	b.produceFailN = n
+	b.produceFailCode = code
+	b.mu.Unlock()
+}
+
+// takeProduceFault returns the error code to inject for this Produce response
+// (0 = none) and decrements the remaining fault count.
+func (b *Broker) takeProduceFault() int16 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.produceFailN <= 0 {
+		return 0
+	}
+	b.produceFailN--
+	return b.produceFailCode
 }
 
 // FailNextOffsetFetch makes the next n single-group (v7) OffsetFetch responses

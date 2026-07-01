@@ -60,6 +60,8 @@ func (b *Broker) handleProduce(_ int, body []byte) ([]byte, error) {
 		name  string
 		parts []pres
 	}
+	faultCode := b.takeProduceFault()
+
 	results := make([]tres, 0, int(nTopics))
 	for i := 1; i < int(nTopics); i++ {
 		name, err := buf.ReadCompactString()
@@ -85,17 +87,23 @@ func (b *Broker) handleProduce(_ int, body []byte) ([]byte, error) {
 			}
 			code := int16(0)
 			base := int64(-1)
-			b.store.mu.Lock()
-			t := b.store.topics[name]
-			if t == nil || int(part) < 0 || int(part) >= len(t.partitions) {
-				code = errUnknownTopicOrPartition
+			if faultCode != 0 {
+				// Injected fault: report the error and do NOT append the batch, so
+				// the record is not committed and the client retries.
+				code = faultCode
 			} else {
-				pl := t.partitions[part]
-				base = pl.leo
-				pl.batches = append(pl.batches, patchBaseOffset(batch, base))
-				pl.leo += int64(batchRecordCount(batch))
+				b.store.mu.Lock()
+				t := b.store.topics[name]
+				if t == nil || int(part) < 0 || int(part) >= len(t.partitions) {
+					code = errUnknownTopicOrPartition
+				} else {
+					pl := t.partitions[part]
+					base = pl.leo
+					pl.batches = append(pl.batches, patchBaseOffset(batch, base))
+					pl.leo += int64(batchRecordCount(batch))
+				}
+				b.store.mu.Unlock()
 			}
-			b.store.mu.Unlock()
 			tr.parts = append(tr.parts, pres{part, code, base})
 		}
 		if err := skipTags(buf); err != nil { // topic tag
