@@ -13,6 +13,7 @@ updated: 2026-06-30
 Append-only log of wiki ingests and notable project events. Newest first.
 
 ## 2026-07-01
+- **v0.26.21 shipped** — producer send-path perf: removed a dead `protoByKey` allocation (built per produce, never read). BenchmarkProduceSync1000 (via kfake): 92→80 allocs, 2.74MB→2.34MB, ~20% faster. Behaviour-identical.
 - **v0.26.18–v0.26.20 shipped — hardening → performance → docs arc.** (1) Fuzzed the wire decoders (12 `go test -fuzz` targets) — found + fixed a real DoS/panic (unbounded/negative `make` from wire counts in `assignment.go`/`group_assign.go`); de-flaked `TestIntegrationAdminACL`. (2) Rewrote the record-batch decoder to a single per-batch backing buffer: **2014→4 allocs, 116µs→57µs, ~2× consume throughput** on the decode path. (3) Added `Admin.ShareGroupLag` + [`docs/SHARE_GROUPS.md`](../docs/SHARE_GROUPS.md) + `examples/sharegroupadmin`. See [[Audit: KIP-932 implementation gaps]].
 
 ## 2026-06-30
