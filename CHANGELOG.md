@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.19] - 2026-06-30
+
+### Performance
+
+- **Consume path: ~500× fewer allocations and ~2× faster record-batch decode.** The record-batch decoder allocated a fresh `[]byte` for each record's key and value (~2 allocations per record). It now copies each batch's keys/values/headers into a **single per-batch backing buffer** — sub-sliced with `cap == len` so a caller appending to `Key`/`Value` reallocs instead of clobbering a neighbouring field — and preallocates the record slice from the batch's record count. `BenchmarkDecodeRecordBatch1000`: **2014 → 4 allocs/op, 116µs → 57µs, 713 → 1452 MB/s**. Records still own their bytes (no aliasing of the transport's fetch buffer); behaviour is unchanged (verified by the produce→consume/headers/compression integration tests and re-fuzzing the decoder). Adds `BenchmarkDecodeRecordBatch1/1000`.
+
 ## [0.26.18] - 2026-06-30
 
 ### Fixed

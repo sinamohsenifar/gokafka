@@ -519,7 +519,8 @@ func decodeOneRecordBatch(topic string, part int32, batch []byte) (*recordBatchI
 	if _, err := buf.ReadInt32(); err != nil { // baseSequence
 		return nil, err
 	}
-	if _, err := buf.ReadInt32(); err != nil { // numRecords
+	numRecords, err := buf.ReadInt32() // numRecords
+	if err != nil {
 		return nil, err
 	}
 	info := &recordBatchInfo{
@@ -541,7 +542,7 @@ func decodeOneRecordBatch(topic string, part int32, batch []byte) (*recordBatchI
 			return nil, err
 		}
 	}
-	recs, err := parseRecords(topic, part, recordsBytes, baseOffset, firstTimestamp)
+	recs, err := parseRecords(topic, part, recordsBytes, baseOffset, firstTimestamp, numRecords)
 	if err != nil {
 		return nil, err
 	}
@@ -549,9 +550,21 @@ func decodeOneRecordBatch(topic string, part int32, batch []byte) (*recordBatchI
 	return info, nil
 }
 
-func parseRecords(topic string, part int32, data []byte, baseOffset, baseTimestamp int64) ([]FetchedRecord, error) {
+func parseRecords(topic string, part int32, data []byte, baseOffset, baseTimestamp int64, numRecords int32) ([]FetchedRecord, error) {
 	buf := wire.FromBytes(data)
-	var out []FetchedRecord
+	out := make([]FetchedRecord, 0, safePrealloc(int(numRecords)))
+	// One backing buffer per batch holds every record's key/value/header bytes.
+	// len(data) is an upper bound on the bytes we copy (keys/values/headers are all
+	// slices of data), so this is a single allocation for the whole batch instead
+	// of ~2 per record. Each field is a 3-index sub-slice (cap == len) so a caller
+	// appending to Key/Value reallocs rather than clobbering a neighbouring field.
+	backing := make([]byte, 0, len(data))
+	take := func(n int) []byte {
+		start := len(backing)
+		backing = append(backing, buf.B[buf.I:buf.I+n]...)
+		buf.I += n
+		return backing[start:len(backing):len(backing)]
+	}
 	for len(buf.Remaining()) > 0 {
 		length, err := buf.ReadVarint()
 		if err != nil {
@@ -585,9 +598,7 @@ func parseRecords(topic string, part int32, data []byte, baseOffset, baseTimesta
 				buf.I = recordEnd
 				continue
 			}
-			key = make([]byte, keyLen)
-			copy(key, buf.B[buf.I:buf.I+int(keyLen)])
-			buf.I += int(keyLen)
+			key = take(int(keyLen))
 		}
 		valLen, err := buf.ReadVarint()
 		if err != nil {
@@ -599,9 +610,7 @@ func parseRecords(topic string, part int32, data []byte, baseOffset, baseTimesta
 				buf.I = recordEnd
 				continue
 			}
-			val = make([]byte, valLen)
-			copy(val, buf.B[buf.I:buf.I+int(valLen)])
-			buf.I += int(valLen)
+			val = take(int(valLen))
 		}
 		nHdrs, err := buf.ReadVarint()
 		if err != nil {
@@ -619,9 +628,7 @@ func parseRecords(topic string, part int32, data []byte, baseOffset, baseTimesta
 					buf.I = recordEnd
 					break
 				}
-				k = make([]byte, kLen)
-				copy(k, buf.B[buf.I:buf.I+int(kLen)])
-				buf.I += int(kLen)
+				k = take(int(kLen))
 			}
 			vLen, err := buf.ReadVarint()
 			if err != nil {
@@ -633,9 +640,7 @@ func parseRecords(topic string, part int32, data []byte, baseOffset, baseTimesta
 					buf.I = recordEnd
 					break
 				}
-				v = make([]byte, vLen)
-				copy(v, buf.B[buf.I:buf.I+int(vLen)])
-				buf.I += int(vLen)
+				v = take(int(vLen))
 			}
 			hdrs = append(hdrs, [2][]byte{k, v})
 		}
