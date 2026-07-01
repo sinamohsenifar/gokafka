@@ -353,9 +353,18 @@ func TestIntegrationAdminGroupConfigs(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AlterGroupConfigs: %v", err)
 	}
-	got, err := c.Admin().DescribeGroupConfigs(ctx, group)
-	if err != nil {
-		t.Fatalf("DescribeGroupConfigs: %v", err)
+	// Group-config writes propagate asynchronously, so DescribeGroupConfigs may
+	// briefly still report the defaults right after AlterGroupConfigs — poll.
+	var got map[string]string
+	for i := 0; i < 20; i++ {
+		got, err = c.Admin().DescribeGroupConfigs(ctx, group)
+		if err != nil {
+			t.Fatalf("DescribeGroupConfigs: %v", err)
+		}
+		if got["share.auto.offset.reset"] == "latest" && got["share.isolation.level"] == "read_committed" {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
 	}
 	if got["share.auto.offset.reset"] != "latest" {
 		t.Fatalf("share.auto.offset.reset = %q, want latest", got["share.auto.offset.reset"])
