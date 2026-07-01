@@ -13,10 +13,14 @@ You get a full-featured client in one module: idempotent and transactional produ
 Install:
 
 ```bash
-go get github.com/sinamohsenifar/gokafka@v0.25.0
+go get github.com/sinamohsenifar/gokafka@latest
 ```
 
 **Requirements:** Go 1.22 or newer · Apache Kafka 3.4+ (KRaft recommended; Kafka 4.x is KRaft-only).
+
+## Contents
+
+[How it compares](#how-it-compares) · [Features](#features) · [Quick start](#quick-start) · [Configuration](#configuration-reference) · [Security](#security) · [Transactions](#transactions) · [Error handling](#error-handling) · [Observability](#observability) · [**Examples**](#examples) · [**Performance**](#performance) · [**Quality & testing**](#quality--testing) · [Documentation](#documentation)
 
 ### Supported Apache Kafka versions
 
@@ -442,18 +446,65 @@ Register bridges to forward metrics into existing Prometheus or OpenTelemetry pi
 
 ## Examples
 
-Each directory under [`examples/`](examples) is a self-contained runnable program.
+Every subdirectory of [`examples/`](examples) is a self-contained, runnable program — `go run ./examples/<name>`. Broker-backed examples read `KAFKA_BROKERS` (default `localhost:9092`) and `KAFKA_TOPIC`; the **CSFLE** and **Schema Registry** examples run with **no broker**.
 
 ```bash
 export KAFKA_BROKERS=localhost:9092
-go run ./examples/produce        # produce a record
-go run ./examples/consume        # consumer group
-go run ./examples/admin          # topic / cluster admin
-go run ./examples/transactions   # exactly-once (EOS) produce + commit
-go run ./examples/sharegroup     # KIP-932 share group (queue semantics)
-go run ./examples/sharegroupadmin # share-group offsets, lag, configs, delivery-count DLQ
-go run ./examples/schemaregistry # Avro serde — runs with no broker (in-memory registry)
+go run ./examples/produce
 ```
+
+### Producer
+
+| Example | What it demonstrates |
+|---------|----------------------|
+| [`produce`](examples/produce) | Basic synchronous produce with the returned topic / partition / offset |
+| [`idempotent`](examples/idempotent) | Idempotent producer (`Idempotent` + `acks=all`) — exactly-once per partition, no duplicates or reordering on retry |
+| [`compression`](examples/compression) | Per-batch compression (`zstd` / `gzip` / `snappy` / `lz4`) + the KIP-390 gzip level |
+| [`asyncproducer`](examples/asyncproducer) | High-throughput async producer — pipeline records through a worker pool, drain delivery reports |
+| [`partitioner`](examples/partitioner) | Routing: murmur2 hash (default), round-robin / CRC32 via `WithPartitioner`, and an explicit `Record.Partition` |
+| [`headers`](examples/headers) | Record headers (trace-id, content-type) produced and read back |
+
+### Consumer
+
+| Example | What it demonstrates |
+|---------|----------------------|
+| [`consume`](examples/consume) | Consumer-group poll → process → commit loop |
+| [`manualoffsets`](examples/manualoffsets) | `Seek` / `SeekToBeginning` / `SeekToEnd` / `SeekToTime`, offset reset, and committing only processed records |
+| [`rebalancelistener`](examples/rebalancelistener) | A `RebalanceListener` reacting to cooperative assign / revoke (commit or flush before revocation) |
+
+### Reliability (exactly-once)
+
+| Example | What it demonstrates |
+|---------|----------------------|
+| [`transactions`](examples/transactions) | Transactional produce: begin → produce → commit / abort |
+| [`exactly-once-ctp`](examples/exactly-once-ctp) | Consume-transform-produce EOS — `SendOffsetsToTxn` folds the output records **and** the consumed input offsets into one atomic transaction |
+
+### Security
+
+| Example | What it demonstrates |
+|---------|----------------------|
+| [`security`](examples/security) | TLS + SASL (SCRAM-SHA-256 over TLS) via `WithSecurity` |
+
+### Serialization
+
+| Example | What it demonstrates |
+|---------|----------------------|
+| [`schemaregistry`](examples/schemaregistry) | Avro serde against an in-memory registry — **runs with no broker** |
+| [`csfle`](examples/csfle) | Client-side field-level encryption (envelope AES-GCM + pluggable KMS) — **runs with no broker** |
+
+### Admin & operations
+
+| Example | What it demonstrates |
+|---------|----------------------|
+| [`admin`](examples/admin) | Topic and cluster admin |
+| [`sharegroup`](examples/sharegroup) | KIP-932 share group (queue semantics) |
+| [`sharegroupadmin`](examples/sharegroupadmin) | Share-group offsets, lag, configs, and the delivery-count DLQ pattern |
+
+### Observability
+
+| Example | What it demonstrates |
+|---------|----------------------|
+| [`observability`](examples/observability) | Built-in metrics + a custom `MetricsRecorder` hook + `log/slog` routing + a `Client.Metrics()` snapshot |
 
 ### Testing without a broker
 
@@ -473,6 +524,46 @@ client, _ := gokafka.NewClient(cfg)
 
 For Schema Registry serde tests, `schema.MockRegistry` is an in-memory registry
 with the identical `Serde` API.
+
+---
+
+## Performance
+
+GoKafka is stdlib-only (no CGO / librdkafka), so throughput comes from batching, per-batch compression, and per-broker fetch/produce concurrency — not a native thread pool. Hot-path costs (indicative — `go test -bench=. -benchmem` on an Apple-class CPU; treat the **ratios and allocation counts** as the signal, absolute times vary by machine):
+
+| Path | Time | Allocations | Throughput |
+|------|-----:|------------:|-----------:|
+| Encode Produce request — 1 record | ~0.8 µs | 6 | — |
+| Encode Produce request — 1000-record batch | ~250 µs | **29** (≈0.03 / record) | — |
+| Decode fetched 1000-record batch | ~86 µs | **4** | ~960 MB/s |
+| `ProduceSync` end-to-end — 1 record (via `kfake`) | ~54 µs | 39 | — |
+| `ProduceSync` end-to-end — 1000-record batch (via `kfake`) | ~0.65 ms | 85 | — |
+| Avro serde encode (Confluent wire) | ~58 ns | 1 | — |
+| JSON serde encode | ~213 ns | 4 | — |
+
+The record-batch encoder and decoder use a single pooled buffer with a back-patched length rather than one allocation per record — a 1000-record batch **encodes in 29 allocations and decodes in 4**. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the throughput / latency / durability tuning tables, the async and batch producers, and anti-patterns.
+
+Reproduce the benchmarks:
+
+```bash
+go test -run='^$' -bench=. -benchmem ./internal/protocol/ ./internal/wire/ ./schema/ ./kfake/
+```
+
+---
+
+## Quality & testing
+
+| Dimension | Status |
+|-----------|--------|
+| **Unit tests** | 270+ across 15 packages, `go test -race` clean |
+| **Fuzzing** | 12 `go test -fuzz` targets over the wire decoders (seed corpus runs in CI) |
+| **In-process broker** | [`kfake`](kfake) mock broker — produce / consume / groups / admin / transactions tested with **no Docker** |
+| **Integration** | Real-broker suite on **Kafka 3.9.2 · 4.0.2 · 4.1.2 · 4.2.1 · 4.3.0** × **Go 1.22–1.26**, plus a **Redpanda** lane, on every push |
+| **Multi-broker** | 3-broker KRaft cluster tests — leader failover and partial-ack no-duplication — under `-tags=multibroker` |
+| **Static analysis** | `gofmt`, `go vet`, and `staticcheck` enforced in CI |
+| **Data-loss audit** | 6 confirmed produce / consume / rebalance integrity bugs found and fixed, each with a regression test (v0.26.22–v0.26.27) |
+
+The correctness oracle for `kfake` is the real client: every mock handler is exercised by running the actual GoKafka client against it. Test policy and the local integration matrix are in [docs/TESTING.md](docs/TESTING.md); protocol/KIP coverage is in [docs/CONFORMANCE.md](docs/CONFORMANCE.md).
 
 ---
 
