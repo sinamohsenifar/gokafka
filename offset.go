@@ -9,6 +9,11 @@ import (
 )
 
 // Seek moves consumption to an explicit offset for a subscribed partition.
+// Not locked under c.mu on purpose: rebalance listeners (OnPartitionsAssigned)
+// run while the consumer holds c.mu and commonly Seek from there, so taking the
+// lock here would deadlock. Poll's advanceDelivered compare-and-set (it only
+// advances a partition still at the offset it fetched from) keeps a concurrent
+// Seek from being clobbered.
 func (c *Consumer) Seek(topic string, partition int32, offset int64) error {
 	if err := c.client.requireOpen(); err != nil {
 		return err

@@ -94,35 +94,25 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 	for node := range byNode {
 		nodes = append(nodes, node)
 	}
-	if len(nodes) == 1 {
-		recs, err := c.fetchFromBroker(ctx, group, nodes[0], byNode[nodes[0]], isolation, maxPoll)
-		if err != nil {
-			if errors.Is(err, protocol.ErrRebalanceInProgress) {
-				return c.handleFetchRebalance(ctx)
-			}
-			if errors.Is(err, protocol.ErrLeaderEpochChanged) || errors.Is(err, protocol.ErrUnknownTopicID) {
-				_ = c.client.cluster.Refresh(ctx, c.topics)
-				return nil, nil
-			}
-			return nil, err
-		}
-		return recs, nil
-	}
+
 	type nodeFetch struct {
-		records []Record
-		err     error
+		items []fetchItem
+		err   error
 	}
 	fetches := make([]nodeFetch, len(nodes))
-	var wg sync.WaitGroup
-	for i, node := range nodes {
-		wg.Add(1)
-		go func(i int, node int32) {
-			defer wg.Done()
-			fetches[i].records, fetches[i].err = c.fetchFromBroker(ctx, group, node, byNode[node], isolation, maxPoll)
-		}(i, node)
+	if len(nodes) == 1 {
+		fetches[0].items, fetches[0].err = c.fetchFromBroker(ctx, group, nodes[0], byNode[nodes[0]], isolation, maxPoll)
+	} else {
+		var wg sync.WaitGroup
+		for i, node := range nodes {
+			wg.Add(1)
+			go func(i int, node int32) {
+				defer wg.Done()
+				fetches[i].items, fetches[i].err = c.fetchFromBroker(ctx, group, node, byNode[node], isolation, maxPoll)
+			}(i, node)
+		}
+		wg.Wait()
 	}
-	wg.Wait()
-	var out []Record
 	for _, f := range fetches {
 		if f.err != nil {
 			if errors.Is(f.err, protocol.ErrRebalanceInProgress) {
@@ -134,12 +124,80 @@ func (c *Consumer) Poll(ctx context.Context) ([]Record, error) {
 			}
 			return nil, f.err
 		}
-		out = append(out, f.records...)
-		if len(out) >= maxPoll {
-			return out[:maxPoll], nil
+	}
+
+	nodeItems := make([][]fetchItem, len(fetches))
+	for i := range fetches {
+		nodeItems[i] = fetches[i].items
+	}
+	out, cursor := aggregateFetches(nodeItems, maxPoll)
+	for i := range out {
+		c.client.observe.Metrics.OnConsume(len(out[i].Value), nil)
+	}
+	c.advanceDelivered(assignments, cursor)
+	return out, nil
+}
+
+// aggregateFetches walks the per-node fetch items in order, delivering data
+// records up to maxPoll and computing the per-partition cursor advance (the
+// offset just past the last item actually delivered). A partition's cursor is
+// set ONLY for items that fall before the max-poll cut, so records fetched
+// beyond it — including a faster broker's tail that the old out[:maxPoll]
+// truncation dropped after already bumping their offsets — are left out of the
+// cursor map and re-fetched next Poll rather than silently skipped. Markers
+// (rec == nil) advance the cursor without counting toward maxPoll, so a
+// read_committed consumer never stalls re-fetching a marker, yet a marker past
+// the cut is not applied over dropped data. Because the resulting cursor is the
+// DELIVERED position (not the decode-ahead fetch position), a no-arg Commit can
+// no longer commit past records Poll never returned.
+func aggregateFetches(nodeItems [][]fetchItem, maxPoll int) ([]Record, map[partKey]int64) {
+	out := make([]Record, 0, maxPoll)
+	cursor := map[partKey]int64{}
+	full := false
+	for _, items := range nodeItems {
+		if full {
+			break
+		}
+		for _, it := range items {
+			cursor[partKey{it.topic, it.partition}] = it.offset + 1
+			if it.rec != nil {
+				out = append(out, *it.rec)
+				if maxPoll > 0 && len(out) >= maxPoll {
+					full = true
+					break
+				}
+			}
 		}
 	}
-	return out, nil
+	return out, cursor
+}
+
+// advanceDelivered moves each partition's cursor to the offset just past the
+// last record Poll delivered for it. It is a compare-and-set against the offset
+// the fetch was issued from (fetchedFrom): if a concurrent Seek, a rebalance
+// re-seed, or applyCommittedOffset repositioned the partition since the fetch,
+// those records are stale and the advance is skipped (never moving the cursor
+// backward or over a seek).
+func (c *Consumer) advanceDelivered(fetchedFrom []partitionOffset, cursor map[partKey]int64) {
+	if len(cursor) == 0 {
+		return
+	}
+	from := make(map[partKey]int64, len(fetchedFrom))
+	for _, a := range fetchedFrom {
+		from[partKey{a.topic, a.partition}] = a.offset
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := range c.assignments {
+		pk := partKey{c.assignments[i].topic, c.assignments[i].partition}
+		next, ok := cursor[pk]
+		if !ok {
+			continue
+		}
+		if f, ok := from[pk]; ok && c.assignments[i].offset == f && next > c.assignments[i].offset {
+			c.assignments[i].offset = next
+		}
+	}
 }
 
 func (c *Consumer) handleFetchRebalance(ctx context.Context) ([]Record, error) {
@@ -153,6 +211,18 @@ func (c *Consumer) handleFetchRebalance(ctx context.Context) ([]Record, error) {
 	return c.Poll(ctx)
 }
 
+// fetchItem is one decoded fetch entry in wire (offset) order: a data record
+// (rec != nil) or a transaction control / aborted-batch marker (rec == nil,
+// advance-only). Poll advances a partition's cursor to the offset+1 of the last
+// item it actually delivers, so a record dropped by the max-poll cut is
+// re-fetched next Poll rather than silently skipped.
+type fetchItem struct {
+	topic     string
+	partition int32
+	offset    int64
+	rec       *Record // nil for control / aborted-transaction markers
+}
+
 func (c *Consumer) fetchFromBroker(
 	ctx context.Context,
 	group string,
@@ -160,7 +230,7 @@ func (c *Consumer) fetchFromBroker(
 	parts []protocol.FetchPartition,
 	isolation int8,
 	maxRecords int,
-) ([]Record, error) {
+) ([]fetchItem, error) {
 	ver := c.client.cluster.NegotiatedVersion(protocol.APIFetch, protocol.VerFetch)
 	body := protocol.EncodeFetchRequest(ver, group, parts, 500, 1, 50<<20, isolation)
 	rb, err := c.client.cluster.Request(ctx, node, protocol.APIFetch, ver, body)
@@ -172,25 +242,29 @@ func (c *Consumer) fetchFromBroker(
 	if err != nil {
 		return nil, err
 	}
-	var out []Record
+	// Do NOT advance the cursor here — the cursor moves only for records Poll
+	// actually delivers (see Poll's aggregation). Return items in wire order,
+	// capped at maxRecords DATA records; markers are advance-only and don't count
+	// toward the cap.
+	items := make([]fetchItem, 0, len(fetched))
+	data := 0
 	for _, fr := range fetched {
-		// Always advance past the record (including transaction control markers)
-		// so read_committed consumers don't get stuck re-fetching a marker.
-		c.bumpOffset(fr.Topic, fr.Partition, fr.Offset+1)
-		if fr.Control {
-			continue
+		it := fetchItem{topic: fr.Topic, partition: fr.Partition, offset: fr.Offset}
+		if !fr.Control {
+			rec := Record{
+				Topic: fr.Topic, Partition: fr.Partition, Offset: fr.Offset,
+				Key: fr.Key, Value: fr.Value, Headers: fetchHeaders(fr.Headers),
+				Timestamp: time.UnixMilli(fr.Timestamp),
+			}
+			it.rec = &rec
+			data++
 		}
-		out = append(out, Record{
-			Topic: fr.Topic, Partition: fr.Partition, Offset: fr.Offset,
-			Key: fr.Key, Value: fr.Value, Headers: fetchHeaders(fr.Headers),
-			Timestamp: time.UnixMilli(fr.Timestamp),
-		})
-		c.client.observe.Metrics.OnConsume(len(fr.Value), nil)
-		if maxRecords > 0 && len(out) >= maxRecords {
+		items = append(items, it)
+		if maxRecords > 0 && data >= maxRecords {
 			break
 		}
 	}
-	return out, nil
+	return items, nil
 }
 
 // GroupMetadata returns the consumer's group generation and member identity for transactional offset commit.
@@ -211,7 +285,13 @@ func (c *Consumer) bumpOffset(topic string, part int32, off int64) {
 	}
 }
 
-// Commit commits consumed offsets to the consumer group coordinator.
+// Commit commits consumed offsets to the consumer group coordinator. With
+// explicit records it commits each record's offset+1 — commit only what you
+// processed. With no records it commits the last offset Poll RETURNED for each
+// partition (the delivered position), never the decode-ahead fetch position, so
+// it cannot commit past records Poll never handed back. Like Kafka's
+// commitSync(), the no-arg form assumes every record the last Poll returned was
+// processed; pass the processed records explicitly if that is not guaranteed.
 func (c *Consumer) Commit(ctx context.Context, records ...Record) error {
 	return c.commitOffsets(ctx, records, 0)
 }

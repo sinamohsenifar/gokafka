@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.26] - 2026-07-01
+
+### Fixed
+
+- **Consumer: `Poll` advances a partition's cursor only for records it actually returns — fixes silent multi-broker over-fetch loss and the no-arg `Commit` fetch-position foot-gun.** `fetchFromBroker` advanced the fetch cursor at **decode** time for every record. In the multi-broker `Poll` path each leader was fetched in parallel (each up to `maxPollRecords`), then the aggregate was truncated to `out[:maxPoll]` — so a faster broker's already-decoded, already-cursor-bumped records were **dropped from the return yet skipped on the next fetch**: silent data loss on the happy path whenever an assignment spanned ≥2 leaders and the fetch exceeded `maxPoll`. Separately, a no-arg `Commit(ctx)` committed that decode-ahead fetch position, i.e. past records the caller may not have processed. `Poll` now decodes without moving the cursor and advances each partition **only to the offset just past the last record it delivered** (`aggregateFetches`), applied via a compare-and-set against the offset the fetch was issued from (so a concurrent `Seek` / rebalance re-seed / committed-offset load is never clobbered). Records beyond the max-poll cut are left unbumped and re-fetched; transaction control/aborted markers still advance the cursor (no read_committed re-fetch stall) but only when they survive the cut. The cursor is now the **delivered** position, so no-arg `Commit` commits exactly what `Poll` returned (documented on `Commit`; matches `commitSync()`). New white-box `aggregateFetches` regression tests (over-fetch loss, mid-run cut, trailing/all markers, multi-poll union loses nothing); full unit `-race` + consumer / group / read-committed / cooperative-rebalance / EOS / CTP integration green.
+
 ## [0.26.25] - 2026-07-01
 
 ### Fixed
