@@ -5,12 +5,30 @@ category: History
 subcategory: Releases
 status: active
 tags: [gokafka, history, releases, changelog]
-updated: 2026-06-30
+updated: 2026-07-01
 ---
 
 # Release history
 
 Source of truth: `CHANGELOG.md`. Highlights below.
+
+## 0.26.22–0.26.27 — data-loss / message-integrity audit
+6 confirmed integrity bugs found by an adversarial find→verify Workflow, each fixed with a regression test and real-broker verification.
+| Version | Theme |
+|---|---|
+| **0.26.27** | Per-partition produce retry — partial multi-broker failure no longer re-sends (dups) committed partitions (idempotence off); real 3-broker validated |
+| **0.26.26** | `Poll` delivered-position cursor — fixes silent multi-broker over-fetch loss (`out[:maxPoll]` dropped already-bumped records) + no-arg `Commit` fetch-position |
+| **0.26.25** | Freeze partition assignment across produce retries (RoundRobin re-partition → reorder/cross-partition dup) |
+| **0.26.24** | `OffsetFetch` completeness — never resume an assigned partition at offset 0 on a transient/omitted response (mass re-read) |
+| **0.26.23** | Idempotent sequence reserved per-record (not per-batch) + `OUT_OF_ORDER_SEQUENCE`/epoch made fatal (were retriable + reset-PID → dup) |
+| **0.26.22** | Record-batch CRC-32C validation on consume (was read+discarded → corrupt batch silently skipped records) |
+
+## 0.26.8–0.26.21 — hardening, perf, KIP-932 admin
+| Version | Theme |
+|---|---|
+| **0.26.19–0.26.21** | Decoder perf (2014→4 allocs record-batch), producer send-path alloc trim, fuzz-hardened wire decoders |
+| **0.26.12–0.26.17** | KIP-932 share-group admin (offsets/lag/configs, API 90/91/92), `delivery_count`, rebootstrap resilience, `kfake.NewBrokerAt` |
+| **0.26.8–0.26.11** | KIP-932 ack modes + share-consumer robustness; Protobuf/SR completeness fixes |
 
 ## 0.26.x — mock broker, CSFLE, Redpanda
 | Version | Theme |
