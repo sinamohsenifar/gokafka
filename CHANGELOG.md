@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.20] - 2026-07-01
+
+### Added
+
+- **`Admin.ShareGroupLag`** — per-partition lag for a KIP-932 share group (each partition's log-end offset minus the share-partition start offset), the share-group analogue of `ConsumerGroupLag`. Pairs `DescribeShareGroupOffsets` with `ListOffsets`. Verified end-to-end.
+
+### Documentation
+
+- **New `docs/SHARE_GROUPS.md`** consolidating the KIP-932 client surface: consuming, acknowledgement modes (implicit/explicit), the `DeliveryCount` dead-letter pattern, and the offsets/lag/configs admin surface. New runnable **`examples/sharegroupadmin`** demonstrates offsets, lag, `AlterShareGroupOffsets`, group configs, and delivery-count-based DLQ (runs against a share-enabled broker). README links both.
+
 ## [0.26.19] - 2026-06-30
 
 ### Performance

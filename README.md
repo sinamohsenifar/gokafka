@@ -451,6 +451,7 @@ go run ./examples/consume        # consumer group
 go run ./examples/admin          # topic / cluster admin
 go run ./examples/transactions   # exactly-once (EOS) produce + commit
 go run ./examples/sharegroup     # KIP-932 share group (queue semantics)
+go run ./examples/sharegroupadmin # share-group offsets, lag, configs, delivery-count DLQ
 go run ./examples/schemaregistry # Avro serde — runs with no broker (in-memory registry)
 ```
 
@@ -483,6 +484,7 @@ Start at the **[docs index](docs/README.md)**. Highlights:
 |----------|----------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layered design, request path, encoding, version negotiation, subsystems |
 | [docs/CONFORMANCE.md](docs/CONFORMANCE.md) | Protocol API / KIP / Schema Registry coverage vs Apache Kafka 4.3 |
+| [docs/SHARE_GROUPS.md](docs/SHARE_GROUPS.md) | KIP-932 queues: consume, ack modes, delivery-count DLQ, offsets/lag/configs admin |
 | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Tuning, benchmarks, best practices, and anti-patterns |
 | [docs/CAPABILITIES.md](docs/CAPABILITIES.md) | Connection types, serialization, use-case mapping |
 | [docs/KIPS.md](docs/KIPS.md) | Kafka Improvement Proposal coverage |

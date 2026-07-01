@@ -55,6 +55,46 @@ func (a *Admin) ConsumerGroupLag(ctx context.Context, group string) ([]Partition
 	return out, nil
 }
 
+// ShareGroupLag returns per-partition lag for a KIP-932 share group — the gap
+// between each partition's log-end (latest) offset and the group's share-partition
+// start offset (SPSO), i.e. the position the group has consumed past. It pairs
+// DescribeShareGroupOffsets (for the SPSO, reported in PartitionLag.Committed)
+// with the partitions' latest offsets (ListOffsets). Returns an empty slice if
+// the group has no offsets. Requires a broker with share groups enabled (Kafka 4.1+).
+func (a *Admin) ShareGroupLag(ctx context.Context, group string) ([]PartitionLag, error) {
+	if group == "" {
+		return nil, ErrNoShareGroup
+	}
+	offsets, err := a.DescribeShareGroupOffsets(ctx, group)
+	if err != nil {
+		return nil, err
+	}
+	if len(offsets) == 0 {
+		return []PartitionLag{}, nil
+	}
+	parts := make([]CommittedOffset, 0, len(offsets))
+	for _, o := range offsets {
+		parts = append(parts, CommittedOffset{Topic: o.Topic, Partition: o.Partition, Offset: o.StartOffset})
+	}
+	ends, err := a.listLatestOffsets(ctx, parts)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]PartitionLag, 0, len(parts))
+	for _, co := range parts {
+		end := ends[partKey{co.Topic, co.Partition}]
+		lag := int64(0)
+		if co.Offset >= 0 && end > co.Offset {
+			lag = end - co.Offset
+		}
+		out = append(out, PartitionLag{
+			Topic: co.Topic, Partition: co.Partition,
+			Committed: co.Offset, LogEndOffset: end, Lag: lag,
+		})
+	}
+	return out, nil
+}
+
 // listLatestOffsets resolves the log-end (latest) offset for each partition,
 // grouping the requests by partition leader and refreshing metadata + retrying
 // while leaders are unavailable.

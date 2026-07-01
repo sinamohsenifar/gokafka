@@ -161,6 +161,77 @@ func TestIntegrationAdminDescribeShareGroupOffsets(t *testing.T) {
 	}
 }
 
+// TestIntegrationShareGroupLag verifies Admin.ShareGroupLag pairs the share
+// group's SPSO with each partition's log-end offset.
+func TestIntegrationShareGroupLag(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	brokers := integrationBrokers(t)
+
+	probeCfg, _ := gokafka.NewConfig(brokers)
+	probe, err := gokafka.NewClient(probeCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	supported, _ := probe.SupportsAPI(ctx, protocol.APIDescribeShareGroupOffsets, 0)
+	probe.Close()
+	if !supported {
+		t.Skip("broker does not advertise DescribeShareGroupOffsets (API 90)")
+	}
+
+	topic := fmt.Sprintf("gokafka-sglag-%d", time.Now().UnixNano())
+	group := fmt.Sprintf("gokafka-sglag-grp-%d", time.Now().UnixNano())
+
+	adminCfg, _ := gokafka.NewConfig(brokers)
+	admin, err := gokafka.NewClient(adminCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := admin.Admin().CreateTopic(ctx, topic, 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	integrationWaitPartitions(t, admin.Admin(), topic, 1)
+	t.Cleanup(func() {
+		_ = admin.Admin().DeleteTopics(context.Background(), topic)
+		admin.Close()
+	})
+
+	cfg, _ := gokafka.NewConfig(brokers, gokafka.WithShareGroup(group), gokafka.WithConsumeFromBeginning(true))
+	c, err := gokafka.NewClient(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := c.Producer().ProduceSync(ctx,
+		gokafka.Record{Topic: topic, Value: []byte("a")},
+		gokafka.Record{Topic: topic, Value: []byte("b")},
+		gokafka.Record{Topic: topic, Value: []byte("c")}); err != nil {
+		t.Fatal(err)
+	}
+	share := c.ShareConsumer([]string{topic})
+	recs := pollUntil(t, ctx, share, 1)
+	if len(recs) < 1 {
+		t.Fatalf("expected >=1 record, got %d", len(recs))
+	}
+	_ = share.Acknowledge(ctx, recs...)
+	_ = share.Leave(ctx)
+
+	lag, err := c.Admin().ShareGroupLag(ctx, group)
+	if err != nil {
+		t.Fatalf("ShareGroupLag: %v", err)
+	}
+	for _, l := range lag {
+		if l.Topic == topic && l.Partition == 0 {
+			if l.LogEndOffset != 3 {
+				t.Fatalf("logEnd = %d, want 3", l.LogEndOffset)
+			}
+			if l.Lag != l.LogEndOffset-l.Committed {
+				t.Fatalf("lag %d != logEnd %d - SPSO %d", l.Lag, l.LogEndOffset, l.Committed)
+			}
+		}
+	}
+}
+
 // TestIntegrationAdminAlterDeleteShareGroupOffsets verifies the AlterShareGroupOffsets
 // (API 91) and DeleteShareGroupOffsets (API 92) wire codecs round-trip against a
 // real broker: consume+ack+leave (group becomes empty), reset the SPSO, confirm
